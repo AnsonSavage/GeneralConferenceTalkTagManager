@@ -149,6 +149,10 @@ if page == "🔍 Search & Tag":
                 with col2:
                     if selected_tag and st.button("Add Tag", key=f"add_tag_{result['id']}"):
                         db.tag_paragraph(result['id'], tag_options[selected_tag])
+                        # Clear the selection by removing from session state
+                        if f"tag_select_{result['id']}" in st.session_state:
+                            del st.session_state[f"tag_select_{result['id']}"]
+                        st.success(f"Tag '{selected_tag}' added!")
                         st.rerun()
                 
                 st.divider()
@@ -260,40 +264,81 @@ elif page == "🏷️ Manage Tags":
 elif page == "🔤 Manage Keywords":
     st.header("Manage Keywords")
     
-    # Add new keywords
-    with st.expander("Add New Keywords", expanded=False):
-        keywords_input = st.text_area(
-            "Enter keywords (one per line or comma-separated):",
-            placeholder="light\ntechnology\ngospel\nfaith"
-        )
-        
-        if st.button("Add Keywords"):
-            if keywords_input:
-                # Parse keywords (handle both newlines and commas)
-                keywords = []
-                for line in keywords_input.split('\n'):
-                    if ',' in line:
-                        keywords.extend([k.strip() for k in line.split(',') if k.strip()])
-                    else:
-                        if line.strip():
-                            keywords.append(line.strip())
-                
-                db.add_keywords(keywords)
-                st.success(f"Added {len(keywords)} keywords")
-                st.rerun()
+    st.info("💡 Keywords are automatically added when you search for them. Click on a keyword to see all matching paragraphs.")
     
     # Display existing keywords
     st.subheader("Existing Keywords")
     keywords = db.get_keywords()
     
     if keywords:
-        # Display in columns
-        cols = st.columns(4)
-        for i, keyword in enumerate(keywords):
-            with cols[i % 4]:
-                st.text(keyword)
+        # Check if we're viewing paragraphs for a specific keyword
+        if 'viewing_keyword' in st.session_state:
+            keyword = st.session_state.viewing_keyword
+            st.subheader(f"Paragraphs matching '{keyword}'")
+            
+            # Back button
+            if st.button("← Back to Keywords List"):
+                del st.session_state.viewing_keyword
+                st.rerun()
+            
+            # Get paragraphs for this keyword
+            paragraphs = db.get_paragraphs_by_keyword(keyword)
+            
+            if paragraphs:
+                st.write(f"Found {len(paragraphs)} paragraphs")
+                
+                # Display each paragraph
+                for para in paragraphs:
+                    with st.expander(f"**{para['talk_title']}** - {para['speaker']} ({para['conference_date']}) - Para {para['paragraph_number']}", expanded=False):
+                        st.markdown(f"**Talk:** [{para['talk_title']}]({para['hyperlink']})")
+                        st.markdown(f"**Speaker:** {para['speaker']}")
+                        st.markdown(f"**Date:** {para['conference_date']}")
+                        
+                        # Highlight the keyword in the content
+                        content = para['content']
+                        content = content.replace(
+                            keyword, 
+                            f"**:red[{keyword}]**"
+                        )
+                        content = content.replace(
+                            keyword.capitalize(), 
+                            f"**:red[{keyword.capitalize()}]**"
+                        )
+                        
+                        st.markdown("**Paragraph Content:**")
+                        st.markdown(content)
+                        
+                        # Show review status
+                        if para['reviewed']:
+                            st.success(f"✅ Reviewed on {para['review_date']}")
+                        else:
+                            st.warning("⏳ Not reviewed yet")
+            else:
+                st.info("No paragraphs found for this keyword.")
+        
+        else:
+            # Display keywords as clickable buttons with delete option
+            st.write("Click on a keyword to see all matching paragraphs:")
+            
+            # Create columns for keyword display
+            cols = st.columns(3)
+            for i, keyword in enumerate(keywords):
+                with cols[i % 3]:
+                    # Keyword button and delete button in same row
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        if st.button(f"🔍 {keyword}", key=f"view_keyword_{keyword}"):
+                            st.session_state.viewing_keyword = keyword
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("🗑️", key=f"delete_keyword_{keyword}", help=f"Delete '{keyword}'"):
+                            db.delete_keyword(keyword)
+                            st.success(f"Keyword '{keyword}' deleted!")
+                            st.rerun()
     else:
-        st.info("No keywords added yet.")
+        st.info("No keywords added yet. Start by searching for keywords in the '🔍 Search & Tag' section.")
 
 elif page == "📊 Summary":
     st.header("Project Summary")

@@ -347,6 +347,70 @@ class ConferenceTalksDB:
         conn.close()
         return [row[0] for row in rows]
     
+    def delete_keyword(self, keyword: str):
+        """Delete a keyword and all its associations"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get keyword ID
+        cursor.execute("SELECT id FROM keywords WHERE keyword = ?", (keyword,))
+        keyword_row = cursor.fetchone()
+        
+        if keyword_row:
+            keyword_id = keyword_row[0]
+            
+            # Delete associations first
+            cursor.execute("DELETE FROM paragraph_keywords WHERE keyword_id = ?", (keyword_id,))
+            
+            # Delete the keyword
+            cursor.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
+            
+            conn.commit()
+        
+        conn.close()
+    
+    def get_paragraphs_by_keyword(self, keyword: str) -> List[Dict]:
+        """Get all paragraphs that match a specific keyword"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                p.id, p.talk_id, p.paragraph_number, p.content, 
+                p.matched_keywords, p.reviewed, p.review_date,
+                t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+            FROM paragraphs p
+            JOIN talks t ON p.talk_id = t.id
+            JOIN paragraph_keywords pk ON p.id = pk.paragraph_id
+            JOIN keywords k ON pk.keyword_id = k.id
+            WHERE k.keyword = ?
+            ORDER BY t.conference_date, t.title, p.paragraph_number
+        """, (keyword,))
+        
+        rows = cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            matched_keywords = json.loads(row[4]) if row[4] else []
+            
+            results.append({
+                'id': row[0],
+                'talk_id': row[1],
+                'paragraph_number': row[2],
+                'content': row[3],
+                'matched_keywords': matched_keywords,
+                'reviewed': bool(row[5]),
+                'review_date': row[6],
+                'talk_title': row[7],
+                'speaker': row[8],
+                'conference_date': row[9],
+                'session': row[10],
+                'hyperlink': row[11]
+            })
+        
+        conn.close()
+        return results
+    
     def parse_talk_file(self, file_path: str) -> Dict:
         """Parse a single talk file and return its metadata and content"""
         with open(file_path, 'r', encoding='utf-8') as file:
