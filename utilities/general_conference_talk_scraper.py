@@ -81,7 +81,7 @@ def main():
     start_year = 2000
     # The script will run up to and including the current year.
     current_year = datetime.now().year
-    output_dir = "General_Conference_Talks"
+    output_dir = "/data/General_Conference_Talks"
     os.makedirs(output_dir, exist_ok=True)
 
     for year in range(start_year, current_year + 1):
