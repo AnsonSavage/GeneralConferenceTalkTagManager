@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 from database import ConferenceTalksDB
-from datetime import datetime
-import json
+import sqlite3
 
 # Initialize database
 @st.cache_resource
@@ -60,12 +59,9 @@ if page == "🔍 Search & Tag":
         # Parse keywords
         keywords = [k.strip() for k in keywords_input.split(",") if k.strip()]
         
-        # Add new keywords to database
-        db.add_keywords(keywords)
-        
-        # Search paragraphs
-        with st.spinner("Searching paragraphs..."):
-            results = db.search_paragraphs(keywords)
+        # Search files and populate database with matching content
+        with st.spinner("Scanning files for keywords..."):
+            results = db.search_and_populate_database(keywords)
         
         st.success(f"Found {len(results)} paragraphs matching your keywords")
         
@@ -157,26 +153,11 @@ if page == "🔍 Search & Tag":
                 st.divider()
 
 elif page == "📚 Manage Talks":
-    st.header("Manage Talks")
-    
-    # Add new talk
-    with st.expander("Add New Talk", expanded=False):
-        with st.form("add_talk_form"):
-            title = st.text_input("Talk Title")
-            speaker = st.text_input("Speaker")
-            conference_date = st.text_input("Conference Date (e.g., 'April 2023')")
-            session = st.text_input("Session (optional)")
-            hyperlink = st.text_input("Hyperlink URL")
-            
-            submitted = st.form_submit_button("Add Talk")
-            
-            if submitted and title and speaker and conference_date and hyperlink:
-                talk_id = db.add_talk(title, speaker, conference_date, hyperlink, session)
-                st.success(f"Talk added with ID: {talk_id}")
-                st.rerun()
+    st.header("Talks in Database")
+    st.info("💡 Talks are automatically added to the database when you search for keywords. Only talks with matching paragraphs are stored.")
     
     # Display existing talks
-    st.subheader("Existing Talks")
+    st.subheader("Talks with Keyword Matches")
     talks = db.get_talks_summary()
     
     if talks:
@@ -194,8 +175,30 @@ elif page == "📚 Manage Talks":
             },
             use_container_width=True
         )
+        
+        # Show keyword associations
+        st.subheader("Keyword Usage")
+        conn = sqlite3.connect(db.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT k.keyword, COUNT(DISTINCT pk.paragraph_id) as usage_count
+            FROM keywords k
+            JOIN paragraph_keywords pk ON k.id = pk.keyword_id
+            GROUP BY k.keyword
+            ORDER BY usage_count DESC
+        """)
+        
+        keyword_usage = cursor.fetchall()
+        conn.close()
+        
+        if keyword_usage:
+            cols = st.columns(3)
+            for i, (keyword, count) in enumerate(keyword_usage):
+                with cols[i % 3]:
+                    st.metric(keyword, count, help=f"Found in {count} paragraphs")
     else:
-        st.info("No talks added yet.")
+        st.info("No talks in database yet. Start by searching for keywords to populate the database with matching content.")
 
 elif page == "🏷️ Manage Tags":
     st.header("Manage Tags")
@@ -335,6 +338,8 @@ elif page == "📊 Summary":
 # Footer
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Tips:**")
+st.sidebar.markdown("• Enter keywords to scan conference talks")
+st.sidebar.markdown("• Only matching paragraphs are stored in database")
 st.sidebar.markdown("• Use specific keywords for better results")
 st.sidebar.markdown("• Create hierarchical tags for better organization")
 st.sidebar.markdown("• Review paragraphs to track progress")

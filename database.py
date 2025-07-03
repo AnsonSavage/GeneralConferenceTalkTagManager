@@ -1,11 +1,14 @@
 import sqlite3
 import json
+import os
+import re
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 class ConferenceTalksDB:
-    def __init__(self, db_path: str = "conference_talks.db"):
+    def __init__(self, db_path: str = "conference_talks.db", data_path: str = "data/General_Conference_Talks"):
         self.db_path = db_path
+        self.data_path = data_path
         self.init_database()
     
     def init_database(self):
@@ -62,6 +65,16 @@ class ConferenceTalksDB:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             
+            CREATE TABLE IF NOT EXISTS paragraph_keywords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paragraph_id INTEGER NOT NULL,
+                keyword_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (paragraph_id) REFERENCES paragraphs (id) ON DELETE CASCADE,
+                FOREIGN KEY (keyword_id) REFERENCES keywords (id) ON DELETE CASCADE,
+                UNIQUE(paragraph_id, keyword_id)
+            );
+            
             CREATE TABLE IF NOT EXISTS search_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 search_keywords TEXT NOT NULL, -- JSON array
@@ -74,6 +87,8 @@ class ConferenceTalksDB:
             CREATE INDEX IF NOT EXISTS idx_paragraphs_reviewed ON paragraphs(reviewed);
             CREATE INDEX IF NOT EXISTS idx_paragraph_tags_paragraph_id ON paragraph_tags(paragraph_id);
             CREATE INDEX IF NOT EXISTS idx_paragraph_tags_tag_id ON paragraph_tags(tag_id);
+            CREATE INDEX IF NOT EXISTS idx_paragraph_keywords_paragraph_id ON paragraph_keywords(paragraph_id);
+            CREATE INDEX IF NOT EXISTS idx_paragraph_keywords_keyword_id ON paragraph_keywords(keyword_id);
             CREATE INDEX IF NOT EXISTS idx_tags_parent ON tags(parent_tag_id);
         """)
         
@@ -331,3 +346,230 @@ class ConferenceTalksDB:
         
         conn.close()
         return [row[0] for row in rows]
+    
+    def parse_talk_file(self, file_path: str) -> Dict:
+        """Parse a single talk file and return its metadata and content"""
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        
+        lines = content.split('\n')
+        
+        # Extract metadata from first 3 lines
+        title = lines[0].replace('Title: ', '') if lines[0].startswith('Title: ') else ''
+        speaker = lines[1].replace('Speaker: ', '') if lines[1].startswith('Speaker: ') else ''
+        url = lines[2].replace('URL: ', '') if lines[2].startswith('URL: ') else ''
+        
+        # Extract talk body (skip metadata + blank line)
+        talk_body = '\n'.join(lines[4:]) if len(lines) > 4 else ''
+        
+        # Extract year and month from file path
+        path_parts = file_path.split(os.sep)
+        year = path_parts[-3] if len(path_parts) >= 3 else ''
+        month = path_parts[-2] if len(path_parts) >= 2 else ''
+        
+        # Convert month to conference date
+        conference_date = f"{'April' if month == '04' else 'October'} {year}" if year and month else ''
+        
+        return {
+            'title': title,
+            'speaker': speaker,
+            'url': url,
+            'conference_date': conference_date,
+            'session': None,  # Not available in file format
+            'content': talk_body,
+            'file_path': file_path
+        }
+    
+    def split_into_paragraphs(self, content: str) -> List[str]:
+        """Split talk content into paragraphs"""
+        # Split by double newlines or single newlines followed by significant whitespace
+        paragraphs = re.split(r'\n\s*\n|\n(?=\s{2,})', content)
+        
+        # Clean up paragraphs
+        cleaned_paragraphs = []
+        for para in paragraphs:
+            # Remove extra whitespace and newlines
+            cleaned = ' '.join(para.split())
+            # Only keep paragraphs with substantial content
+            if len(cleaned) > 50:  # Minimum paragraph length
+                cleaned_paragraphs.append(cleaned)
+        
+        return cleaned_paragraphs
+    
+    def scan_for_keywords(self, keywords: List[str]) -> List[Dict]:
+        """Scan all text files for keywords and return matching paragraphs"""
+        results = []
+        
+        if not os.path.exists(self.data_path):
+            return results
+        
+        # Walk through the directory structure
+        for root, dirs, files in os.walk(self.data_path):
+            for file in files:
+                if file.endswith('.txt'):
+                    file_path = os.path.join(root, file)
+                    
+                    try:
+                        talk_data = self.parse_talk_file(file_path)
+                        paragraphs = self.split_into_paragraphs(talk_data['content'])
+                        
+                        # Check each paragraph for keywords
+                        for para_num, paragraph in enumerate(paragraphs, 1):
+                            matched_keywords = []
+                            paragraph_lower = paragraph.lower()
+                            
+                            for keyword in keywords:
+                                if keyword.lower() in paragraph_lower:
+                                    matched_keywords.append(keyword)
+                            
+                            if matched_keywords:
+                                results.append({
+                                    'talk_data': talk_data,
+                                    'paragraph_number': para_num,
+                                    'content': paragraph,
+                                    'matched_keywords': matched_keywords
+                                })
+                    
+                    except Exception as e:
+                        print(f"Error processing file {file_path}: {e}")
+                        continue
+        
+        return results
+    
+    def add_or_update_talk(self, talk_data: Dict) -> int:
+        """Add a talk to the database or return existing ID"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Check if talk already exists (by title and speaker)
+        cursor.execute("""
+            SELECT id FROM talks 
+            WHERE title = ? AND speaker = ?
+        """, (talk_data['title'], talk_data['speaker']))
+        
+        existing = cursor.fetchone()
+        if existing:
+            talk_id = existing[0]
+        else:
+            # Add new talk
+            cursor.execute("""
+                INSERT INTO talks (title, speaker, conference_date, session, hyperlink)
+                VALUES (?, ?, ?, ?, ?)
+            """, (talk_data['title'], talk_data['speaker'], talk_data['conference_date'], 
+                  talk_data['session'], talk_data['url']))
+            talk_id = cursor.lastrowid
+        
+        conn.commit()
+        conn.close()
+        return talk_id
+    
+    def add_or_update_paragraph(self, talk_id: int, paragraph_number: int, 
+                               content: str, matched_keywords: List[str]) -> int:
+        """Add a paragraph or update its keywords if it already exists"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Check if paragraph already exists
+        cursor.execute("""
+            SELECT id, matched_keywords FROM paragraphs 
+            WHERE talk_id = ? AND paragraph_number = ?
+        """, (talk_id, paragraph_number))
+        
+        existing = cursor.fetchone()
+        if existing:
+            paragraph_id = existing[0]
+            existing_keywords = json.loads(existing[1]) if existing[1] else []
+            
+            # Merge keywords (avoid duplicates)
+            all_keywords = list(set(existing_keywords + matched_keywords))
+            
+            # Update the paragraph with merged keywords
+            cursor.execute("""
+                UPDATE paragraphs 
+                SET matched_keywords = ?, content = ?
+                WHERE id = ?
+            """, (json.dumps(all_keywords), content, paragraph_id))
+        else:
+            # Add new paragraph
+            cursor.execute("""
+                INSERT INTO paragraphs (talk_id, paragraph_number, content, matched_keywords)
+                VALUES (?, ?, ?, ?)
+            """, (talk_id, paragraph_number, content, json.dumps(matched_keywords)))
+            paragraph_id = cursor.lastrowid
+        
+        conn.commit()
+        conn.close()
+        return paragraph_id
+    
+    def add_paragraph_keyword_associations(self, paragraph_id: int, keywords: List[str]):
+        """Add keyword associations for a paragraph"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        for keyword in keywords:
+            # Get or create keyword ID
+            cursor.execute("SELECT id FROM keywords WHERE keyword = ?", (keyword,))
+            keyword_row = cursor.fetchone()
+            
+            if not keyword_row:
+                cursor.execute("INSERT INTO keywords (keyword) VALUES (?)", (keyword,))
+                keyword_id = cursor.lastrowid
+            else:
+                keyword_id = keyword_row[0]
+            
+            # Add association (ignore if already exists)
+            try:
+                cursor.execute("""
+                    INSERT INTO paragraph_keywords (paragraph_id, keyword_id)
+                    VALUES (?, ?)
+                """, (paragraph_id, keyword_id))
+            except sqlite3.IntegrityError:
+                pass  # Association already exists
+        
+        conn.commit()
+        conn.close()
+    
+    def search_and_populate_database(self, keywords: List[str]) -> List[Dict]:
+        """Search for keywords in files and populate database with matching content"""
+        # Add keywords to database
+        self.add_keywords(keywords)
+        
+        # Scan files for matches
+        scan_results = self.scan_for_keywords(keywords)
+        
+        # Add matching content to database
+        database_results = []
+        for result in scan_results:
+            talk_data = result['talk_data']
+            
+            # Add or update talk
+            talk_id = self.add_or_update_talk(talk_data)
+            
+            # Add or update paragraph
+            paragraph_id = self.add_or_update_paragraph(
+                talk_id, 
+                result['paragraph_number'], 
+                result['content'], 
+                result['matched_keywords']
+            )
+            
+            # Add keyword associations
+            self.add_paragraph_keyword_associations(paragraph_id, result['matched_keywords'])
+            
+            # Prepare result for return
+            database_results.append({
+                'id': paragraph_id,
+                'talk_id': talk_id,
+                'paragraph_number': result['paragraph_number'],
+                'content': result['content'],
+                'matched_keywords': result['matched_keywords'],
+                'reviewed': False,
+                'review_date': None,
+                'talk_title': talk_data['title'],
+                'speaker': talk_data['speaker'],
+                'conference_date': talk_data['conference_date'],
+                'session': talk_data['session'],
+                'hyperlink': talk_data['url']
+            })
+        
+        return database_results
