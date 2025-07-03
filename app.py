@@ -53,6 +53,7 @@ if page == "🔍 Search & Tag":
             st.text(keywords_display)
     
     with col2:
+        match_whole_words = st.checkbox("Match whole words only", value=True)
         search_button = st.button("🔍 Search", type="primary")
     
     if search_button and keywords_input:
@@ -61,7 +62,7 @@ if page == "🔍 Search & Tag":
         
         # Search files and populate database with matching content
         with st.spinner("Scanning files for keywords..."):
-            results = db.search_and_populate_database(keywords)
+            results = db.search_and_populate_database(keywords, match_whole_words=match_whole_words)
         
         st.success(f"Found {len(results)} paragraphs matching your keywords")
         

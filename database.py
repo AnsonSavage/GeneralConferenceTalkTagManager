@@ -396,12 +396,17 @@ class ConferenceTalksDB:
         
         return cleaned_paragraphs
     
-    def scan_for_keywords(self, keywords: List[str]) -> List[Dict]:
+    def scan_for_keywords(self, keywords: List[str], match_whole_words: bool = True) -> List[Dict]:
         """Scan all text files for keywords and return matching paragraphs"""
         results = []
         
         if not os.path.exists(self.data_path):
             return results
+        
+        # Precompile regex patterns if whole word matching
+        patterns = None
+        if match_whole_words:
+            patterns = [re.compile(rf'\\b{re.escape(keyword)}\\b', re.IGNORECASE) for keyword in keywords]
         
         # Walk through the directory structure
         for root, dirs, files in os.walk(self.data_path):
@@ -418,9 +423,14 @@ class ConferenceTalksDB:
                             matched_keywords = []
                             paragraph_lower = paragraph.lower()
                             
-                            for keyword in keywords:
-                                if keyword.lower() in paragraph_lower:
-                                    matched_keywords.append(keyword)
+                            if match_whole_words:
+                                for idx, pattern in enumerate(patterns):
+                                    if pattern.search(paragraph):
+                                        matched_keywords.append(keywords[idx])
+                            else:
+                                for keyword in keywords:
+                                    if keyword.lower() in paragraph_lower:
+                                        matched_keywords.append(keyword)
                             
                             if matched_keywords:
                                 results.append({
@@ -435,7 +445,7 @@ class ConferenceTalksDB:
                         continue
         
         return results
-    
+
     def add_or_update_talk(self, talk_data: Dict) -> int:
         """Add a talk to the database or return existing ID"""
         conn = sqlite3.connect(self.db_path)
@@ -529,13 +539,13 @@ class ConferenceTalksDB:
         conn.commit()
         conn.close()
     
-    def search_and_populate_database(self, keywords: List[str]) -> List[Dict]:
+    def search_and_populate_database(self, keywords: List[str], match_whole_words: bool = True) -> List[Dict]:
         """Search for keywords in files and populate database with matching content"""
         # Add keywords to database
         self.add_keywords(keywords)
         
         # Scan files for matches
-        scan_results = self.scan_for_keywords(keywords)
+        scan_results = self.scan_for_keywords(keywords, match_whole_words=match_whole_words)
         
         # Add matching content to database
         database_results = []
