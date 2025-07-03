@@ -411,6 +411,225 @@ class ConferenceTalksDB:
         conn.close()
         return results
     
+    def get_all_paragraphs_with_filters(self, tag_filter: str = None, keyword_filter: str = None, 
+                                       untagged_only: bool = False) -> List[Dict]:
+        """Get paragraphs with optional filtering"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        base_query = """
+            SELECT DISTINCT
+                p.id, p.talk_id, p.paragraph_number, p.content, 
+                p.matched_keywords, p.reviewed, p.review_date,
+                t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+            FROM paragraphs p
+            JOIN talks t ON p.talk_id = t.id
+        """
+        
+        conditions = []
+        params = []
+        
+        if untagged_only:
+            base_query += " LEFT JOIN paragraph_tags pt ON p.id = pt.paragraph_id"
+            conditions.append("pt.paragraph_id IS NULL")
+        elif tag_filter:
+            base_query += " JOIN paragraph_tags pt ON p.id = pt.paragraph_id JOIN tags tag ON pt.tag_id = tag.id"
+            conditions.append("tag.name = ?")
+            params.append(tag_filter)
+        
+        if keyword_filter:
+            base_query += " JOIN paragraph_keywords pk ON p.id = pk.paragraph_id JOIN keywords k ON pk.keyword_id = k.id"
+            conditions.append("k.keyword = ?")
+            params.append(keyword_filter)
+        
+        if conditions:
+            base_query += " WHERE " + " AND ".join(conditions)
+        
+        base_query += " ORDER BY t.conference_date, t.title, p.paragraph_number"
+        
+        cursor.execute(base_query, params)
+        rows = cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            matched_keywords = json.loads(row[4]) if row[4] else []
+            
+            results.append({
+                'id': row[0],
+                'talk_id': row[1],
+                'paragraph_number': row[2],
+                'content': row[3],
+                'matched_keywords': matched_keywords,
+                'reviewed': bool(row[5]),
+                'review_date': row[6],
+                'talk_title': row[7],
+                'speaker': row[8],
+                'conference_date': row[9],
+                'session': row[10],
+                'hyperlink': row[11]
+            })
+        
+        conn.close()
+        return results
+    
+    def get_tag_hierarchy(self, tag_id: int) -> List[int]:
+        """Get all parent tags for a given tag (including the tag itself)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        hierarchy = []
+        current_id = tag_id
+        
+        while current_id:
+            hierarchy.append(current_id)
+            cursor.execute("SELECT parent_tag_id FROM tags WHERE id = ?", (current_id,))
+            row = cursor.fetchone()
+            current_id = row[0] if row and row[0] else None
+        
+        conn.close()
+        return hierarchy
+    
+    def tag_paragraph_with_hierarchy(self, paragraph_id: int, tag_id: int):
+        """Tag a paragraph and all its parent tags"""
+        hierarchy = self.get_tag_hierarchy(tag_id)
+        
+        for parent_tag_id in hierarchy:
+            self.tag_paragraph(paragraph_id, parent_tag_id)
+    
+    def get_paragraph_tags_with_hierarchy(self, paragraph_id: int) -> Dict:
+        """Get all tags for a paragraph, separating explicit and implicit tags"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get all tags for this paragraph
+        cursor.execute("""
+            SELECT t.id, t.name, t.description, t.parent_tag_id
+            FROM tags t
+            JOIN paragraph_tags pt ON t.id = pt.tag_id
+            WHERE pt.paragraph_id = ?
+            ORDER BY t.name
+        """, (paragraph_id,))
+        
+        all_tags = cursor.fetchall()
+        
+        # Determine which tags are explicit (leaf nodes) vs implicit (parents)
+        explicit_tags = []
+        implicit_tags = []
+        
+        tag_dict = {tag[0]: tag for tag in all_tags}
+        
+        for tag in all_tags:
+            tag_id = tag[0]
+            # Check if this tag has any children that are also tagged
+            has_tagged_children = any(
+                other_tag[3] == tag_id for other_tag in all_tags
+            )
+            
+            if has_tagged_children:
+                implicit_tags.append({
+                    'id': tag[0], 'name': tag[1], 'description': tag[2], 
+                    'parent_tag_id': tag[3]
+                })
+            else:
+                explicit_tags.append({
+                    'id': tag[0], 'name': tag[1], 'description': tag[2], 
+                    'parent_tag_id': tag[3]
+                })
+        
+        conn.close()
+        return {
+            'explicit': explicit_tags,
+            'implicit': implicit_tags
+        }
+    
+    def update_tag(self, tag_id: int, name: str = None, description: str = None, 
+                   parent_tag_id: int = None):
+        """Update a tag's properties"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        updates = []
+        params = []
+        
+        if name is not None:
+            updates.append("name = ?")
+            params.append(name)
+        
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+        
+        if parent_tag_id is not None:
+            updates.append("parent_tag_id = ?")
+            params.append(parent_tag_id)
+        
+        if updates:
+            params.append(tag_id)
+            query = f"UPDATE tags SET {', '.join(updates)} WHERE id = ?"
+            cursor.execute(query, params)
+            conn.commit()
+        
+        conn.close()
+    
+    def delete_tag(self, tag_id: int):
+        """Delete a tag and update its children to have no parent"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Update children to have no parent
+        cursor.execute("UPDATE tags SET parent_tag_id = NULL WHERE parent_tag_id = ?", (tag_id,))
+        
+        # Delete the tag (this will cascade to paragraph_tags)
+        cursor.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+        
+        conn.commit()
+        conn.close()
+    
+    def search_tags(self, query: str) -> List[Dict]:
+        """Search for tags by name"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, name, description, parent_tag_id
+            FROM tags
+            WHERE name LIKE ?
+            ORDER BY name
+        """, (f"%{query}%",))
+        
+        rows = cursor.fetchall()
+        tags = [{'id': row[0], 'name': row[1], 'description': row[2], 'parent_tag_id': row[3]} 
+                for row in rows]
+        
+        conn.close()
+        return tags
+    
+    def update_paragraph_reviewed_status(self):
+        """Update reviewed status based on whether paragraph has tags"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Mark paragraphs with tags as reviewed
+        cursor.execute("""
+            UPDATE paragraphs 
+            SET reviewed = 1, review_date = CURRENT_TIMESTAMP
+            WHERE id IN (
+                SELECT DISTINCT paragraph_id FROM paragraph_tags
+            ) AND reviewed = 0
+        """)
+        
+        # Mark paragraphs without tags as not reviewed
+        cursor.execute("""
+            UPDATE paragraphs 
+            SET reviewed = 0, review_date = NULL
+            WHERE id NOT IN (
+                SELECT DISTINCT paragraph_id FROM paragraph_tags
+            ) AND reviewed = 1
+        """)
+        
+        conn.commit()
+        conn.close()
+    
     def parse_talk_file(self, file_path: str) -> Dict:
         """Parse a single talk file and return its metadata and content"""
         with open(file_path, 'r', encoding='utf-8') as file:
