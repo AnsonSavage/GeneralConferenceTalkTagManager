@@ -6,8 +6,7 @@ A Streamlit application for analyzing and tagging General Conference talks with 
 
 ```
 GeneralConferenceTalkTagManager/
-├── app.py                    # Original monolithic app (legacy)
-├── app_modular.py           # New modular main application
+├── app.py           # New modular main application
 ├── database.py              # Original database file (legacy)
 ├── conference_talks.db      # SQLite database
 ├── data/                    # Conference talks text files
