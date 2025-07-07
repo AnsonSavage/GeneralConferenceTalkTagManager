@@ -4,7 +4,7 @@ Add Tags to Paragraphs page module - Flashcard-style tagging workflow.
 import streamlit as st
 from typing import Dict, Any
 from ..components.ui_components import FlashcardNavigator, TagSelector
-from ..utils.helpers import highlight_keywords, display_hierarchical_tags, display_matched_keywords
+from ..utils.helpers import highlight_keywords, display_hierarchical_tags_with_indentation, display_matched_keywords
 
 
 def render_add_tags_page(db) -> None:
@@ -69,7 +69,7 @@ def _render_tagging_flashcard(paragraph: Dict[str, Any], db, navigator: Flashcar
         """, unsafe_allow_html=True)
         
         # Current tags display
-        display_hierarchical_tags(paragraph['id'], db)
+        display_hierarchical_tags_with_indentation(paragraph['id'], db)
         
         st.divider()
         
@@ -124,14 +124,30 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
         # Display hierarchical tag structure
         st.markdown("**📋 All Tags (click to add):**")
         
-        def render_tag_hierarchy(tag, level=0):
-            """Recursively render tag hierarchy."""
-            indent = "  " * level
-            prefix = "└─ " if level > 0 else ""
+        def render_tag_hierarchy(tag, level=0, is_last=True, parent_prefixes=None):
+            """Recursively render tag hierarchy with proper Unicode tree structure."""
+            if parent_prefixes is None:
+                parent_prefixes = []
+            
+            # Create the tree prefix
+            if level == 0:
+                prefix = ""
+            else:
+                # Build prefix from parent levels
+                prefix_parts = parent_prefixes.copy()
+                if is_last:
+                    prefix_parts.append("└─ ")
+                else:
+                    prefix_parts.append("├─ ")
+                prefix = "".join(prefix_parts)
             
             col1, col2 = st.columns([4, 1])
             with col1:
-                tag_display = f"{indent}{prefix}**{tag['name']}**"
+                if level == 0:
+                    tag_display = f"🏷️ **{tag['name']}**"
+                else:
+                    tag_display = f"{prefix}🏷️ **{tag['name']}**"
+                
                 if tag['description']:
                     tag_display += f" - *{tag['description']}*"
                 st.markdown(tag_display)
@@ -143,15 +159,26 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
                     st.success(f"✅ Added '{tag['name']}'!")
                     st.rerun()
             
-            # Render children
+            # Render children with proper tree structure
             child_tags = [t for t in all_tags if t['parent_tag_id'] == tag['id']]
-            for child_tag in child_tags:
-                render_tag_hierarchy(child_tag, level + 1)
+            
+            # Update parent prefixes for children
+            new_parent_prefixes = parent_prefixes.copy()
+            if level > 0:
+                if is_last:
+                    new_parent_prefixes.append("   ")  # Three spaces for completed branch
+                else:
+                    new_parent_prefixes.append("│  ")  # Vertical line for continuing branch
+            
+            for i, child_tag in enumerate(child_tags):
+                is_last_child = (i == len(child_tags) - 1)
+                render_tag_hierarchy(child_tag, level + 1, is_last_child, new_parent_prefixes)
         
         # Render all root tags and their hierarchies
-        for root_tag in root_tags:
+        for i, root_tag in enumerate(root_tags):
+            is_last_root = (i == len(root_tags) - 1)
             render_tag_hierarchy(root_tag)
-            if root_tag != root_tags[-1]:  # Don't add divider after last item
+            if not is_last_root:
                 st.markdown("---")
     
     # Notes as dropdown (request #3)
