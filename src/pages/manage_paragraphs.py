@@ -64,11 +64,28 @@ def _render_paragraph_flashcard(paragraph: Dict[str, Any], db, keyword_filter: s
         display_hierarchical_tags(paragraph['id'], db)
         
         # Tag management interface
-        st.markdown("**Add Tags:**")
-        
-        tag_selector = TagSelector(db, paragraph['id'])
-        tag_selector.render_tag_search("flashcard")
-        
-        # Handle popups
+        _render_enhanced_tag_management(paragraph['id'], db)
+
+
+def _render_enhanced_tag_management(paragraph_id: int, db) -> None:
+    """Render enhanced tag management interface."""
+    st.markdown("**➕ Add Tags:**")
+    
+    # Enhanced tag selector with better UX
+    tag_selector = TagSelector(db, paragraph_id)
+    
+    # Create tabs for different tag actions
+    tab1, tab2, tab3 = st.tabs(["🔍 Search Tags", "🏷️ Browse All", "➕ Create New"])
+    
+    with tab1:
+        tag_selector.render_enhanced_tag_search("flashcard")
+        # Handle tag creation popup within the same tab
         tag_selector.render_tag_creation_popup("flashcard")
+    
+    with tab2:
+        tag_selector.render_enhanced_all_tags("flashcard")
+        # Also handle the legacy popup display here if needed
         tag_selector.render_all_tags_popup("flashcard")
+    
+    with tab3:
+        tag_selector.render_enhanced_tag_creation("flashcard")

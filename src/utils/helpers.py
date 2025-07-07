@@ -6,27 +6,90 @@ import random
 from typing import List, Dict, Any
 
 
-def highlight_keywords(content: str, keywords: List[str]) -> str:
+def highlight_keywords(content: str, keywords: List[str], paragraph_id: int = None) -> str:
     """
-    Highlight keywords in content with red text.
+    Highlight keywords in content with red text, considering checkbox states if paragraph_id is provided.
     
     Args:
         content: The text content to highlight
         keywords: List of keywords to highlight
+        paragraph_id: Optional paragraph ID to check checkbox states for selective highlighting
         
     Returns:
         Content with highlighted keywords
     """
     highlighted_content = content
+    
     for keyword in keywords:
-        highlighted_content = highlighted_content.replace(
-            keyword, 
-            f"**:red[{keyword}]**"
-        )
-        highlighted_content = highlighted_content.replace(
-            keyword.capitalize(), 
-            f"**:red[{keyword.capitalize()}]**"
-        )
+        # Check if this keyword should be highlighted (if paragraph_id is provided)
+        should_highlight = True
+        if paragraph_id is not None:
+            checkbox_key = f"keyword_highlight_{paragraph_id}_{keyword}"
+            should_highlight = st.session_state.get(checkbox_key, True)
+        
+        if should_highlight:
+            # Check if we should use caps or title case
+            use_caps = True
+            if paragraph_id is not None:
+                caps_key = f"caps_{paragraph_id}_{keyword}"
+                use_caps = st.session_state.get(caps_key, True)
+            
+            # Apply highlighting with appropriate case
+            if use_caps:
+                highlighted_keyword = f"**:red[{keyword.upper()}]**"
+                highlighted_keyword_cap = f"**:red[{keyword.capitalize().upper()}]**"
+            else:
+                highlighted_keyword = f"**:red[{keyword}]**"
+                highlighted_keyword_cap = f"**:red[{keyword.capitalize()}]**"
+            
+            # Replace both lowercase and capitalized versions
+            highlighted_content = highlighted_content.replace(keyword, highlighted_keyword)
+            highlighted_content = highlighted_content.replace(keyword.capitalize(), highlighted_keyword_cap)
+    
+    return highlighted_content
+
+
+def highlight_keywords_enhanced(content: str, keywords: List[str], 
+                              active_keywords: List[str] = None, 
+                              style_preferences: Dict[str, str] = None) -> str:
+    """
+    Enhanced keyword highlighting with style preferences and selective highlighting.
+    
+    Args:
+        content: The text content to highlight
+        keywords: List of all available keywords
+        active_keywords: List of keywords that should be highlighted
+        style_preferences: Dictionary mapping keywords to style preferences ('caps', 'title', 'bold')
+        
+    Returns:
+        Content with highlighted keywords
+    """
+    if active_keywords is None:
+        active_keywords = keywords
+    
+    if style_preferences is None:
+        style_preferences = {}
+    
+    highlighted_content = content
+    
+    for keyword in keywords:
+        if keyword in active_keywords:
+            style = style_preferences.get(keyword, 'bold')
+            
+            if style == 'caps':
+                highlighted_keyword = f"**:red[{keyword.upper()}]**"
+                highlighted_keyword_cap = f"**:red[{keyword.capitalize().upper()}]**"
+            elif style == 'title':
+                highlighted_keyword = f"**:red[{keyword.title()}]**"
+                highlighted_keyword_cap = f"**:red[{keyword.capitalize().title()}]**"
+            else:  # bold
+                highlighted_keyword = f"**:red[{keyword}]**"
+                highlighted_keyword_cap = f"**:red[{keyword.capitalize()}]**"
+            
+            # Replace both lowercase and capitalized versions
+            highlighted_content = highlighted_content.replace(keyword, highlighted_keyword)
+            highlighted_content = highlighted_content.replace(keyword.capitalize(), highlighted_keyword_cap)
+    
     return highlighted_content
 
 
@@ -127,6 +190,26 @@ def display_talk_info(paragraph_data: Dict[str, Any]) -> None:
         st.markdown(f"**Session:** {paragraph_data['session']}")
 
 
+def display_enhanced_talk_info(paragraph_data: Dict[str, Any]) -> None:
+    """
+    Display enhanced talk information with better styling for flashcards.
+    
+    Args:
+        paragraph_data: Dictionary containing talk information
+    """
+    st.markdown(f"""
+    <div style="text-align: center; background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin: 10px 0;">
+        <h4 style="color: #1f4e7a; margin-bottom: 8px;">📖 {paragraph_data['talk_title']}</h4>
+        <p style="color: #495057; margin: 4px 0;">
+            <strong>Speaker:</strong> {paragraph_data['speaker']} | 
+            <strong>Date:</strong> {paragraph_data['conference_date']}
+        </p>
+        {f'<p style="color: #6c757d; margin: 4px 0;"><strong>Session:</strong> {paragraph_data.get("session", "N/A")}</p>' if paragraph_data.get('session') else ''}
+        {f'<p style="margin: 8px 0;"><a href="{paragraph_data["hyperlink"]}" target="_blank">🔗 View Original Talk</a></p>' if paragraph_data.get('hyperlink') else ''}
+    </div>
+    """, unsafe_allow_html=True)
+
+
 def get_navigation_state(key: str, default: int = 0) -> int:
     """
     Get navigation state from session state.
@@ -184,3 +267,84 @@ def show_error_message(message: str) -> None:
         message: Error message to display
     """
     st.error(message)
+
+
+def format_flashcard_content(content: str, max_length: int = None) -> str:
+    """
+    Format content for display in flashcards with optional truncation.
+    
+    Args:
+        content: The content to format
+        max_length: Optional maximum length for truncation
+        
+    Returns:
+        Formatted content
+    """
+    if max_length and len(content) > max_length:
+        return content[:max_length] + "..."
+    return content
+
+
+def get_keyword_style_preferences(paragraph_id: int, keywords: List[str]) -> Dict[str, str]:
+    """
+    Get style preferences for keywords from session state.
+    
+    Args:
+        paragraph_id: ID of the paragraph
+        keywords: List of keywords
+        
+    Returns:
+        Dictionary mapping keywords to their style preferences
+    """
+    preferences = {}
+    for keyword in keywords:
+        caps_key = f"caps_{paragraph_id}_{keyword}"
+        if st.session_state.get(caps_key, True):
+            preferences[keyword] = 'caps'
+        else:
+            preferences[keyword] = 'title'
+    return preferences
+
+
+def get_active_keywords(paragraph_id: int, keywords: List[str]) -> List[str]:
+    """
+    Get list of keywords that should be highlighted based on checkbox states.
+    
+    Args:
+        paragraph_id: ID of the paragraph
+        keywords: List of all keywords
+        
+    Returns:
+        List of keywords that should be highlighted
+    """
+    active = []
+    for keyword in keywords:
+        checkbox_key = f"keyword_highlight_{paragraph_id}_{keyword}"
+        if st.session_state.get(checkbox_key, True):
+            active.append(keyword)
+    return active
+
+
+def create_keyword_summary(keywords: List[str], active_keywords: List[str]) -> str:
+    """
+    Create a summary of keyword status for display.
+    
+    Args:
+        keywords: List of all keywords
+        active_keywords: List of active keywords
+        
+    Returns:
+        Summary string
+    """
+    if not keywords:
+        return "No keywords found"
+    
+    active_count = len(active_keywords)
+    total_count = len(keywords)
+    
+    if active_count == total_count:
+        return f"All {total_count} keywords highlighted"
+    elif active_count == 0:
+        return f"No keywords highlighted (of {total_count})"
+    else:
+        return f"{active_count} of {total_count} keywords highlighted"

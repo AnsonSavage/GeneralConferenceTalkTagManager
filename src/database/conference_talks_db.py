@@ -689,7 +689,7 @@ class ConferenceTalksDB:
         # Precompile regex patterns if whole word matching
         patterns = None
         if match_whole_words:
-            patterns = [re.compile(rf'\\b{re.escape(keyword)}\\b', re.IGNORECASE) for keyword in keywords]
+            patterns = [re.compile(rf'\b{re.escape(keyword)}\b', re.IGNORECASE) for keyword in keywords]
         
         # Walk through the directory structure
         for root, dirs, files in os.walk(self.data_path):
