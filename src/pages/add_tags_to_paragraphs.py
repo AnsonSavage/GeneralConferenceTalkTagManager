@@ -94,19 +94,25 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
         selected_tag_name = st.selectbox(
             "🔍 Select a tag to add:",
             options=[""] + list(tag_options.keys()),
-            key="tag_selector_dropdown",
+            key=f"tag_selector_dropdown_{paragraph_id}",
             help="Choose a tag from the dropdown to add it to this paragraph"
         )
         
-        # Automatically add the selected tag
+        # Automatically add the selected tag, but only if it's a new selection
         if selected_tag_name and selected_tag_name != "":
-            selected_tag_id = tag_options[selected_tag_name]
-            db.tag_paragraph_with_hierarchy(paragraph_id, selected_tag_id)
-            db.update_paragraph_reviewed_status()
-            st.success(f"✅ Added '{selected_tag_name}'!")
-            # Clear the selection by resetting the session state
-            st.session_state["tag_selector_dropdown"] = ""
-            st.rerun()
+            # Use a session state key to track the last processed tag for this paragraph
+            last_processed_key = f"last_processed_tag_{paragraph_id}"
+            
+            # Only process if this is a different selection than last time
+            if st.session_state.get(last_processed_key) != selected_tag_name:
+                selected_tag_id = tag_options[selected_tag_name]
+                db.tag_paragraph_with_hierarchy(paragraph_id, selected_tag_id)
+                db.update_paragraph_reviewed_status()
+                st.success(f"✅ Added '{selected_tag_name}'!")
+                
+                # Mark this tag as processed for this paragraph
+                st.session_state[last_processed_key] = selected_tag_name
+                st.rerun()
     
     # Option to create new tag if none selected
     with st.expander("✨ Create New Tag", expanded=False):
