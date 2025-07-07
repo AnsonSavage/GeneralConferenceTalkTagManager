@@ -85,102 +85,122 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
     all_tags = db.get_all_tags()
     root_tags = [tag for tag in all_tags if tag['parent_tag_id'] is None]
     
-    # Search/filter box
-    search_term = st.text_input(
-        "🔍 Search existing tags:",
-        placeholder="Type to filter tags or search...",
-        key="streamlined_tag_search"
-    )
-    
-    # Filter tags based on search
-    if search_term:
-        filtered_tags = [tag for tag in all_tags if search_term.lower() in tag['name'].lower()]
-        st.markdown(f"**🎯 Matching tags ({len(filtered_tags)} found):**")
+    # Tag selection dropdown - similar to Parent Tag dropdown in Manage Tags
+    if all_tags:
+        # Create options dictionary with tag names as keys and IDs as values
+        tag_options = {tag['name']: tag['id'] for tag in all_tags}
         
-        # Display filtered tags as clickable buttons
-        if filtered_tags:
-            cols = st.columns(min(len(filtered_tags), 4))
-            for i, tag in enumerate(filtered_tags[:12]):  # Limit to 12 results
-                with cols[i % 4]:
-                    if st.button(f"➕ {tag['name']}", key=f"filtered_tag_{tag['id']}", help=tag['description'] or 'No description'):
+        # Add search functionality with selectbox
+        selected_tag_name = st.selectbox(
+            "🔍 Select a tag to add:",
+            options=[""] + list(tag_options.keys()),
+            key="tag_selector_dropdown",
+            help="Choose a tag from the dropdown to add it to this paragraph"
+        )
+        
+        # Automatically add the selected tag
+        if selected_tag_name and selected_tag_name != "":
+            selected_tag_id = tag_options[selected_tag_name]
+            db.tag_paragraph_with_hierarchy(paragraph_id, selected_tag_id)
+            db.update_paragraph_reviewed_status()
+            st.success(f"✅ Added '{selected_tag_name}'!")
+            # Clear the selection by resetting the session state
+            st.session_state["tag_selector_dropdown"] = ""
+            st.rerun()
+    
+    # Option to create new tag if none selected
+    with st.expander("✨ Create New Tag", expanded=False):
+        with st.form("quick_create_tag_form"):
+            new_tag_name = st.text_input("New Tag Name:")
+            new_tag_description = st.text_area("Description (optional):")
+            
+            # Parent tag selection for new tag
+            if all_tags:
+                parent_options = {tag['name']: tag['id'] for tag in all_tags}
+                parent_tag = st.selectbox(
+                    "Parent Tag (optional):",
+                    options=[""] + list(parent_options.keys()),
+                    key="new_tag_parent"
+                )
+            else:
+                parent_tag = ""
+            
+            if st.form_submit_button("Create & Add Tag"):
+                if new_tag_name:
+                    try:
+                        parent_id = parent_options.get(parent_tag) if parent_tag and all_tags else None
+                        tag_id = db.add_tag(new_tag_name, new_tag_description, parent_id)
+                        db.tag_paragraph_with_hierarchy(paragraph_id, tag_id)
+                        db.update_paragraph_reviewed_status()
+                        st.success(f"✅ Created and added '{new_tag_name}'!")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(str(e))
+                else:
+                    st.error("Please enter a tag name.")
+    
+    # Display hierarchical tag structure for reference
+    with st.expander("📋 View All Tags", expanded=False):
+        if all_tags:
+            def render_tag_hierarchy(tag, level=0, is_last=True, parent_prefixes=None):
+                """Recursively render tag hierarchy with proper Unicode tree structure."""
+                if parent_prefixes is None:
+                    parent_prefixes = []
+                
+                # Create the tree prefix
+                if level == 0:
+                    prefix = ""
+                else:
+                    # Build prefix from parent levels
+                    prefix_parts = parent_prefixes.copy()
+                    if is_last:
+                        prefix_parts.append("└─ ")
+                    else:
+                        prefix_parts.append("├─ ")
+                    prefix = "".join(prefix_parts)
+                
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    if level == 0:
+                        tag_display = f"🏷️ **{tag['name']}**"
+                    else:
+                        tag_display = f"{prefix}🏷️ **{tag['name']}**"
+                    
+                    if tag['description']:
+                        tag_display += f" - *{tag['description']}*"
+                    st.markdown(tag_display)
+                
+                with col2:
+                    if st.button("➕", key=f"hier_add_{tag['id']}", help=f"Add {tag['name']}"):
                         db.tag_paragraph_with_hierarchy(paragraph_id, tag['id'])
                         db.update_paragraph_reviewed_status()
                         st.success(f"✅ Added '{tag['name']}'!")
                         st.rerun()
-        else:
-            st.info("No existing tags match your search.")
-            # Quick create button
-            if st.button(f"✨ Create new tag: '{search_term}'", key="quick_create_tag"):
-                try:
-                    tag_id = db.add_tag(search_term)
-                    db.tag_paragraph_with_hierarchy(paragraph_id, tag_id)
-                    db.update_paragraph_reviewed_status()
-                    st.success(f"✅ Created and added '{search_term}'!")
-                    st.rerun()
-                except ValueError as e:
-                    st.error(str(e))
-    
-    else:
-        # Display hierarchical tag structure
-        st.markdown("**📋 All Tags (click to add):**")
-        
-        def render_tag_hierarchy(tag, level=0, is_last=True, parent_prefixes=None):
-            """Recursively render tag hierarchy with proper Unicode tree structure."""
-            if parent_prefixes is None:
-                parent_prefixes = []
-            
-            # Create the tree prefix
-            if level == 0:
-                prefix = ""
-            else:
-                # Build prefix from parent levels
-                prefix_parts = parent_prefixes.copy()
-                if is_last:
-                    prefix_parts.append("└─ ")
-                else:
-                    prefix_parts.append("├─ ")
-                prefix = "".join(prefix_parts)
-            
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                if level == 0:
-                    tag_display = f"🏷️ **{tag['name']}**"
-                else:
-                    tag_display = f"{prefix}🏷️ **{tag['name']}**"
                 
-                if tag['description']:
-                    tag_display += f" - *{tag['description']}*"
-                st.markdown(tag_display)
+                # Render children with proper tree structure
+                child_tags = [t for t in all_tags if t['parent_tag_id'] == tag['id']]
+                
+                # Update parent prefixes for children
+                new_parent_prefixes = parent_prefixes.copy()
+                if level >= 0:  # Apply to all levels including root
+                    if is_last:
+                        new_parent_prefixes.append("   ")  # Three spaces for completed branch
+                    else:
+                        new_parent_prefixes.append("│  ")  # Vertical line for continuing branch
+                
+                for i, child_tag in enumerate(child_tags):
+                    is_last_child = (i == len(child_tags) - 1)
+                    render_tag_hierarchy(child_tag, level + 1, is_last_child, new_parent_prefixes)
             
-            with col2:
-                if st.button("➕", key=f"hier_tag_{tag['id']}", help=f"Add {tag['name']}"):
-                    db.tag_paragraph_with_hierarchy(paragraph_id, tag['id'])
-                    db.update_paragraph_reviewed_status()
-                    st.success(f"✅ Added '{tag['name']}'!")
-                    st.rerun()
-            
-            # Render children with proper tree structure
-            child_tags = [t for t in all_tags if t['parent_tag_id'] == tag['id']]
-            
-            # Update parent prefixes for children
-            new_parent_prefixes = parent_prefixes.copy()
-            if level > 0:
-                if is_last:
-                    new_parent_prefixes.append("   ")  # Three spaces for completed branch
-                else:
-                    new_parent_prefixes.append("│  ")  # Vertical line for continuing branch
-            
-            for i, child_tag in enumerate(child_tags):
-                is_last_child = (i == len(child_tags) - 1)
-                render_tag_hierarchy(child_tag, level + 1, is_last_child, new_parent_prefixes)
-        
-        # Render all root tags and their hierarchies
-        for i, root_tag in enumerate(root_tags):
-            is_last_root = (i == len(root_tags) - 1)
-            render_tag_hierarchy(root_tag)
-            if not is_last_root:
-                st.markdown("---")
-    
+            # Render all root tags and their hierarchies
+            for i, root_tag in enumerate(root_tags):
+                is_last_root = (i == len(root_tags) - 1)
+                render_tag_hierarchy(root_tag, 0, is_last_root)
+                if not is_last_root:
+                    st.markdown("---")
+        else:
+            st.info("No tags available. Create your first tag above!")
+
     # Notes as dropdown (request #3)
     with st.expander("📝 Add Notes (Optional)", expanded=False):
         _render_notes_section(paragraph_id, db)
