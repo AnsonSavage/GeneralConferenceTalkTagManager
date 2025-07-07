@@ -6,8 +6,7 @@ A Streamlit application for analyzing and tagging General Conference talks with 
 
 ```
 GeneralConferenceTalkTagManager/
-├── app.py           # New modular main application
-├── database.py              # Original database file (legacy)
+├── app.py                   # Main Streamlit application
 ├── conference_talks.db      # SQLite database
 ├── data/                    # Conference talks text files
 │   └── General_Conference_Talks/
@@ -27,6 +26,8 @@ GeneralConferenceTalkTagManager/
 │   │   ├── manage_talks.py         # Talks overview
 │   │   ├── manage_tags.py          # Tag management
 │   │   ├── manage_keywords.py      # Keyword management
+│   │   ├── add_tags_to_paragraphs.py # Tagging utility
+│   │   ├── export.py               # Export functionality
 │   │   └── summary.py              # Project summary
 │   └── utils/               # Utility functions
 │       ├── __init__.py
@@ -37,12 +38,7 @@ GeneralConferenceTalkTagManager/
 
 ## 🚀 Quick Start
 
-### Using the Modular Version (Recommended)
-```bash
-streamlit run app_modular.py
-```
-
-### Using the Legacy Version
+Run the main application:
 ```bash
 streamlit run app.py
 ```
@@ -94,6 +90,16 @@ streamlit run app.py
 - View all keywords and their usage
 - Click to see paragraphs matching each keyword
 - Keyword deletion
+
+### `add_tags_to_paragraphs.py`
+- Interface to add tags to selected paragraphs
+- Supports hierarchical tag selection
+- Batch processing of paragraphs
+
+### `export.py`
+- Export tagged paragraphs to CSV
+- Customizable export fields
+- Preview before export
 
 ### `summary.py`
 - Project overview and statistics
