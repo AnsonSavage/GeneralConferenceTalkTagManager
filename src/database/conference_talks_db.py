@@ -422,7 +422,7 @@ class ConferenceTalksDB:
         return results
     
     def get_all_paragraphs_with_filters(self, tag_filter: str = None, keyword_filter: str = None, 
-                                       untagged_only: bool = False) -> List[Dict]:
+                                       untagged_only: bool = False, reviewed_only: bool = False) -> List[Dict]:
         """Get paragraphs with optional filtering"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -451,6 +451,9 @@ class ConferenceTalksDB:
             base_query += " JOIN paragraph_keywords pk ON p.id = pk.paragraph_id JOIN keywords k ON pk.keyword_id = k.id"
             conditions.append("k.keyword = ?")
             params.append(keyword_filter)
+        
+        if reviewed_only:
+            conditions.append("p.reviewed = 1")
         
         if conditions:
             base_query += " WHERE " + " AND ".join(conditions)
