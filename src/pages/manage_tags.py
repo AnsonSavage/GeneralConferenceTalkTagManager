@@ -29,13 +29,20 @@ def render_manage_tags_page(db) -> None:
 
 def _render_add_tag_section(db) -> None:
     """Render the add new tag section."""
+    # Clear form fields if flag is set
+    if st.session_state.get("add_tag_clear", False):
+        st.session_state["add_tag_name"] = ""
+        st.session_state["add_tag_description"] = ""
+        st.session_state["add_tag_parent"] = ""
+        st.session_state["add_tag_clear"] = False
+
     with st.expander("Add New Tag", expanded=False):
         with st.form("add_tag_form"):
             col1, col2 = st.columns(2)
             
             with col1:
-                tag_name = st.text_input("Tag Name")
-                tag_description = st.text_area("Description (optional)")
+                tag_name = st.text_input("Tag Name", key="add_tag_name")
+                tag_description = st.text_area("Description (optional)", key="add_tag_description")
             
             with col2:
                 # Parent tag selection
@@ -44,7 +51,8 @@ def _render_add_tag_section(db) -> None:
                 
                 parent_tag = st.selectbox(
                     "Parent Tag (optional):",
-                    options=[""] + list(parent_options.keys())
+                    options=[""] + list(parent_options.keys()),
+                    key="add_tag_parent"
                 )
             
             submitted = st.form_submit_button("Add Tag")
@@ -54,6 +62,7 @@ def _render_add_tag_section(db) -> None:
                     parent_id = parent_options[parent_tag] if parent_tag else None
                     tag_id = db.add_tag(tag_name, tag_description, parent_id)
                     st.success(f"Tag '{tag_name}' added with ID: {tag_id}")
+                    st.session_state["add_tag_clear"] = True
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e))
@@ -110,38 +119,40 @@ def _render_tag_edit_form(db, tags: List[Dict[str, Any]]) -> None:
 
 
 def _render_tags_list(tags: List[Dict[str, Any]]) -> None:
-    """Render the hierarchical tags list with edit buttons."""
+    """Render the hierarchical tags list with edit buttons, showing full hierarchy."""
     root_tags = [tag for tag in tags if tag['parent_tag_id'] is None]
-    child_tags = [tag for tag in tags if tag['parent_tag_id'] is not None]
     
-    for root_tag in root_tags:
+    def render_tag_with_children(tag: Dict[str, Any], level: int = 0) -> None:
+        """Recursively render a tag and all its children."""
+        indent = "—      —" * level
+        
         col1, col2 = st.columns([4, 1])
         
         with col1:
-            st.markdown(f"**{root_tag['name']}**")
-            if root_tag['description']:
-                st.markdown(f"  *{root_tag['description']}*")
+            if level == 0:
+                st.markdown(f"**{tag['name']}**")
+            else:
+                st.markdown(f"{indent}• **{tag['name']}**")
+            
+            if tag['description']:
+                if level == 0:
+                    st.markdown(f"  *{tag['description']}*")
+                else:
+                    st.markdown(f"{indent}  *{tag['description']}*")
         
         with col2:
-            if st.button("✏️ Edit", key=f"edit_root_{root_tag['id']}", help="Edit this tag"):
-                st.session_state.editing_tag = root_tag['id']
+            if st.button("✏️ Edit", key=f"edit_tag_{tag['id']}", help="Edit this tag"):
+                st.session_state.editing_tag = tag['id']
                 st.rerun()
         
-        # Display child tags
-        children = [tag for tag in child_tags if tag['parent_tag_id'] == root_tag['id']]
-        for child in children:
-            col1, col2 = st.columns([4, 1])
-            
-            with col1:
-                st.markdown(f"  • {child['name']}")
-                if child['description']:
-                    st.markdown(f"    *{child['description']}*")
-            
-            with col2:
-                if st.button("✏️ Edit", key=f"edit_child_{child['id']}", help="Edit this tag"):
-                    st.session_state.editing_tag = child['id']
-                    st.rerun()
-        
+        # Find and render all children of this tag
+        child_tags = [t for t in tags if t['parent_tag_id'] == tag['id']]
+        for child_tag in child_tags:
+            render_tag_with_children(child_tag, level + 1)
+    
+    # Render all root tags and their hierarchies
+    for root_tag in root_tags:
+        render_tag_with_children(root_tag)
         st.divider()
 
 

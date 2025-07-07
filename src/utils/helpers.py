@@ -348,3 +348,19 @@ def create_keyword_summary(keywords: List[str], active_keywords: List[str]) -> s
         return f"No keywords highlighted (of {total_count})"
     else:
         return f"{active_count} of {total_count} keywords highlighted"
+
+
+def display_matched_keywords(paragraph_data: Dict[str, Any]) -> None:
+    """
+    Display matched keywords in red above the paragraph content.
+    
+    Args:
+        paragraph_data: Dictionary containing paragraph information including matched_keywords
+    """
+    if paragraph_data.get('matched_keywords'):
+        keywords_list = paragraph_data['matched_keywords']
+        if keywords_list:
+            st.markdown("**🔍 Matched Keywords:**")
+            # Display keywords as red badges
+            keywords_html = " ".join([f'<span style="background-color: #ffebee; color: #d32f2f; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; margin: 2px;">{keyword}</span>' for keyword in keywords_list])
+            st.markdown(f'<div style="margin-bottom: 10px;">{keywords_html}</div>', unsafe_allow_html=True)

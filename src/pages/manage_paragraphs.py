@@ -4,7 +4,7 @@ Manage Paragraphs page module.
 import streamlit as st
 from typing import Dict, Any
 from ..components.ui_components import FlashcardNavigator, TagSelector, FilterControls
-from ..utils.helpers import highlight_keywords, display_hierarchical_tags
+from ..utils.helpers import highlight_keywords, display_hierarchical_tags, display_matched_keywords
 
 
 def render_manage_paragraphs_page(db) -> None:
@@ -49,6 +49,9 @@ def _render_paragraph_flashcard(paragraph: Dict[str, Any], db, keyword_filter: s
         if paragraph['hyperlink']:
             st.markdown(f"[🔗 View Talk]({paragraph['hyperlink']})")
         
+        # Display matched keywords in red above the paragraph
+        display_matched_keywords(paragraph)
+        
         # Paragraph content
         st.markdown("---")
         
@@ -56,6 +59,9 @@ def _render_paragraph_flashcard(paragraph: Dict[str, Any], db, keyword_filter: s
         content = paragraph['content']
         if keyword_filter and keyword_filter != "All Keywords":
             content = highlight_keywords(content, [keyword_filter])
+        elif paragraph.get('matched_keywords'):
+            # Highlight all matched keywords for this paragraph
+            content = highlight_keywords(content, paragraph['matched_keywords'])
         
         st.markdown(content)
         st.markdown("---")

@@ -216,6 +216,29 @@ class TagSelector:
             
             if matching_tags:
                 st.markdown("**🎯 Matching tags:**")
+                
+                # Add dropdown selection for matching tags
+                if len(matching_tags) > 1:
+                    tag_options = [f"{tag['name']} - {tag['description'] or 'No description'}" for tag in matching_tags]
+                    selected_option = st.selectbox(
+                        "Select a tag to add:",
+                        options=[""] + tag_options,
+                        key=f"tag_dropdown_{key_suffix}",
+                        help="Use arrow keys to navigate and Enter to select"
+                    )
+                    
+                    if selected_option:
+                        # Find the selected tag
+                        selected_tag_name = selected_option.split(" - ")[0]
+                        selected_tag = next((tag for tag in matching_tags if tag['name'] == selected_tag_name), None)
+                        
+                        if selected_tag and st.button("➕ Add Selected Tag", key=f"add_selected_{key_suffix}"):
+                            if self.paragraph_id:
+                                self.db.tag_paragraph_with_hierarchy(self.paragraph_id, selected_tag['id'])
+                                self.db.update_paragraph_reviewed_status()
+                                st.success(f"Added '{selected_tag['name']}' with hierarchy!")
+                                st.rerun()
+                
                 # Display matching tags in a more compact format
                 for tag in matching_tags[:8]:  # Limit to 8 matches
                     col1, col2, col3 = st.columns([3, 1, 1])
