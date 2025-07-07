@@ -16,6 +16,7 @@ from src.pages.manage_paragraphs import render_manage_paragraphs_page
 from src.pages.manage_talks import render_manage_talks_page
 from src.pages.manage_tags import render_manage_tags_page
 from src.pages.manage_keywords import render_manage_keywords_page
+from src.pages.export import render_export_page
 from src.pages.summary import render_summary_page
 
 
@@ -54,6 +55,8 @@ def main():
         render_manage_tags_page(db)
     elif page == "🔤 Manage Keywords":
         render_manage_keywords_page(db)
+    elif page == "📤 Export":
+        render_export_page(db)
     elif page == "📊 Summary":
         render_summary_page(db)
     

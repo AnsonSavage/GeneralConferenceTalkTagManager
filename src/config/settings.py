@@ -34,6 +34,7 @@ NAVIGATION_PAGES = [
     "📚 Manage Talks",
     "🏷️ Manage Tags",
     "🔤 Manage Keywords",
+    "📤 Export",
     "📊 Summary"
 ]
 

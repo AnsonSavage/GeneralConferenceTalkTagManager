@@ -34,6 +34,7 @@ class ConferenceTalksDB:
                 paragraph_number INTEGER NOT NULL,
                 content TEXT NOT NULL,
                 matched_keywords TEXT, -- JSON array of keywords
+                notes TEXT, -- User notes for this paragraph
                 reviewed BOOLEAN DEFAULT FALSE,
                 review_date TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -91,6 +92,13 @@ class ConferenceTalksDB:
             CREATE INDEX IF NOT EXISTS idx_paragraph_keywords_keyword_id ON paragraph_keywords(keyword_id);
             CREATE INDEX IF NOT EXISTS idx_tags_parent ON tags(parent_tag_id);
         """)
+        
+        # Add notes column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute("ALTER TABLE paragraphs ADD COLUMN notes TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         
         conn.commit()
         conn.close()
@@ -195,7 +203,7 @@ class ConferenceTalksDB:
         query = f"""
             SELECT 
                 p.id, p.talk_id, p.paragraph_number, p.content, 
-                p.matched_keywords, p.reviewed, p.review_date,
+                p.matched_keywords, p.notes, p.reviewed, p.review_date,
                 t.title, t.speaker, t.conference_date, t.session, t.hyperlink
             FROM paragraphs p
             JOIN talks t ON p.talk_id = t.id
@@ -223,13 +231,14 @@ class ConferenceTalksDB:
                 'paragraph_number': row[2],
                 'content': row[3],
                 'matched_keywords': actual_matches,
-                'reviewed': bool(row[5]),
-                'review_date': row[6],
-                'talk_title': row[7],
-                'speaker': row[8],
-                'conference_date': row[9],
-                'session': row[10],
-                'hyperlink': row[11]
+                'notes': row[5] or '',
+                'reviewed': bool(row[6]),
+                'review_date': row[7],
+                'talk_title': row[8],
+                'speaker': row[9],
+                'conference_date': row[10],
+                'session': row[11],
+                'hyperlink': row[12]
             })
         
         conn.close()
@@ -377,7 +386,7 @@ class ConferenceTalksDB:
         cursor.execute("""
             SELECT 
                 p.id, p.talk_id, p.paragraph_number, p.content, 
-                p.matched_keywords, p.reviewed, p.review_date,
+                p.matched_keywords, p.notes, p.reviewed, p.review_date,
                 t.title, t.speaker, t.conference_date, t.session, t.hyperlink
             FROM paragraphs p
             JOIN talks t ON p.talk_id = t.id
@@ -399,13 +408,14 @@ class ConferenceTalksDB:
                 'paragraph_number': row[2],
                 'content': row[3],
                 'matched_keywords': matched_keywords,
-                'reviewed': bool(row[5]),
-                'review_date': row[6],
-                'talk_title': row[7],
-                'speaker': row[8],
-                'conference_date': row[9],
-                'session': row[10],
-                'hyperlink': row[11]
+                'notes': row[5] or '',
+                'reviewed': bool(row[6]),
+                'review_date': row[7],
+                'talk_title': row[8],
+                'speaker': row[9],
+                'conference_date': row[10],
+                'session': row[11],
+                'hyperlink': row[12]
             })
         
         conn.close()
@@ -420,7 +430,7 @@ class ConferenceTalksDB:
         base_query = """
             SELECT DISTINCT
                 p.id, p.talk_id, p.paragraph_number, p.content, 
-                p.matched_keywords, p.reviewed, p.review_date,
+                p.matched_keywords, p.notes, p.reviewed, p.review_date,
                 t.title, t.speaker, t.conference_date, t.session, t.hyperlink
             FROM paragraphs p
             JOIN talks t ON p.talk_id = t.id
@@ -460,13 +470,14 @@ class ConferenceTalksDB:
                 'paragraph_number': row[2],
                 'content': row[3],
                 'matched_keywords': matched_keywords,
-                'reviewed': bool(row[5]),
-                'review_date': row[6],
-                'talk_title': row[7],
-                'speaker': row[8],
-                'conference_date': row[9],
-                'session': row[10],
-                'hyperlink': row[11]
+                'notes': row[5] or '',
+                'reviewed': bool(row[6]),
+                'review_date': row[7],
+                'talk_title': row[8],
+                'speaker': row[9],
+                'conference_date': row[10],
+                'session': row[11],
+                'hyperlink': row[12]
             })
         
         conn.close()
@@ -856,6 +867,7 @@ class ConferenceTalksDB:
                 'paragraph_number': result['paragraph_number'],
                 'content': result['content'],
                 'matched_keywords': result['matched_keywords'],
+                'notes': '',  # New paragraphs start with empty notes
                 'reviewed': False,
                 'review_date': None,
                 'talk_title': talk_data['title'],
@@ -866,3 +878,176 @@ class ConferenceTalksDB:
             })
         
         return database_results
+    
+    def update_paragraph_notes(self, paragraph_id: int, notes: str):
+        """Update notes for a paragraph"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE paragraphs 
+            SET notes = ?
+            WHERE id = ?
+        """, (notes, paragraph_id))
+        
+        conn.commit()
+        conn.close()
+    
+    def get_paragraph_with_notes(self, paragraph_id: int) -> Dict:
+        """Get a paragraph with its notes"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                p.id, p.talk_id, p.paragraph_number, p.content, 
+                p.matched_keywords, p.notes, p.reviewed, p.review_date,
+                t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+            FROM paragraphs p
+            JOIN talks t ON p.talk_id = t.id
+            WHERE p.id = ?
+        """, (paragraph_id,))
+        
+        row = cursor.fetchone()
+        if row:
+            matched_keywords = json.loads(row[4]) if row[4] else []
+            result = {
+                'id': row[0],
+                'talk_id': row[1],
+                'paragraph_number': row[2],
+                'content': row[3],
+                'matched_keywords': matched_keywords,
+                'notes': row[5] or '',
+                'reviewed': bool(row[6]),
+                'review_date': row[7],
+                'talk_title': row[8],
+                'speaker': row[9],
+                'conference_date': row[10],
+                'session': row[11],
+                'hyperlink': row[12]
+            }
+        else:
+            result = None
+        
+        conn.close()
+        return result
+
+    def export_to_markdown(self, output_file: str = None) -> str:
+        """Export database content to markdown format organized by tag hierarchy"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get all tags with their hierarchy
+        cursor.execute("""
+            SELECT id, name, description, parent_tag_id
+            FROM tags
+            ORDER BY name
+        """)
+        tags_data = cursor.fetchall()
+        
+        # Build tag hierarchy
+        tags_dict = {}
+        root_tags = []
+        
+        for tag_id, name, description, parent_id in tags_data:
+            tag_info = {
+                'id': tag_id,
+                'name': name,
+                'description': description,
+                'parent_id': parent_id,
+                'children': []
+            }
+            tags_dict[tag_id] = tag_info
+            
+            if parent_id is None:
+                root_tags.append(tag_info)
+        
+        # Build parent-child relationships
+        for tag_info in tags_dict.values():
+            if tag_info['parent_id'] is not None:
+                parent = tags_dict.get(tag_info['parent_id'])
+                if parent:
+                    parent['children'].append(tag_info)
+        
+        # Generate markdown content
+        markdown_content = []
+        markdown_content.append("# Conference Talks Database Export\n")
+        markdown_content.append(f"*Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n")
+        
+        # Process each root tag
+        for root_tag in sorted(root_tags, key=lambda x: x['name']):
+            self._export_tag_hierarchy(root_tag, markdown_content, cursor, level=1)
+        
+        conn.close()
+        
+        # Join all content
+        full_content = '\n'.join(markdown_content)
+        
+        # Write to file if specified
+        if output_file:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(full_content)
+        
+        return full_content
+
+    def _export_tag_hierarchy(self, tag_info: Dict, markdown_content: List[str], cursor, level: int = 1):
+        """Recursively export tag hierarchy to markdown"""
+        # Create heading based on level
+        heading_prefix = '#' * level
+        markdown_content.append(f"{heading_prefix} {tag_info['name']}")
+        
+        if tag_info['description']:
+            markdown_content.append(f"*{tag_info['description']}*")
+        
+        markdown_content.append("")
+        
+        # Get paragraphs for this tag
+        cursor.execute("""
+            SELECT DISTINCT
+                p.id, p.content, p.notes, p.matched_keywords,
+                t.title, t.speaker, t.conference_date
+            FROM paragraphs p
+            JOIN talks t ON p.talk_id = t.id
+            JOIN paragraph_tags pt ON p.id = pt.paragraph_id
+            WHERE pt.tag_id = ?
+            ORDER BY t.conference_date, t.title, p.paragraph_number
+        """, (tag_info['id'],))
+        
+        paragraphs = cursor.fetchall()
+        
+        for para_id, content, notes, matched_keywords_json, title, speaker, conf_date in paragraphs:
+            # Add paragraph content as bullet point
+            markdown_content.append(f"• {content}")
+            
+            # Add keywords if any
+            if matched_keywords_json:
+                matched_keywords = json.loads(matched_keywords_json)
+                if matched_keywords:
+                    keywords_str = ", ".join(matched_keywords)
+                    markdown_content.append(f"  - **Keywords:** {keywords_str}")
+            
+            # Add notes if any
+            if notes and notes.strip():
+                markdown_content.append(f"  - **Note:** {notes.strip()}")
+            
+            # Check if paragraph is assigned to other tags
+            cursor.execute("""
+                SELECT t.name
+                FROM tags t
+                JOIN paragraph_tags pt ON t.id = pt.tag_id
+                WHERE pt.paragraph_id = ? AND t.id != ?
+                ORDER BY t.name
+            """, (para_id, tag_info['id']))
+            
+            other_tags = [row[0] for row in cursor.fetchall()]
+            if other_tags:
+                other_tags_str = ", ".join(other_tags)
+                markdown_content.append(f"  - **Also found under:** {other_tags_str}")
+            
+            # Add source information
+            markdown_content.append(f"  - **Source:** {speaker} - {title} ({conf_date})")
+            markdown_content.append("")
+        
+        # Process children recursively
+        for child_tag in sorted(tag_info['children'], key=lambda x: x['name']):
+            self._export_tag_hierarchy(child_tag, markdown_content, cursor, level + 1)
