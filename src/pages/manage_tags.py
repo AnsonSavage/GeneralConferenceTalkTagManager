@@ -119,26 +119,37 @@ def _render_tag_edit_form(db, tags: List[Dict[str, Any]]) -> None:
 
 
 def _render_tags_list(tags: List[Dict[str, Any]]) -> None:
-    """Render the hierarchical tags list with edit buttons, showing full hierarchy."""
+    """Render the hierarchical tags list with edit buttons using tree structure."""
     root_tags = [tag for tag in tags if tag['parent_tag_id'] is None]
     
-    def render_tag_with_children(tag: Dict[str, Any], level: int = 0) -> None:
-        """Recursively render a tag and all its children."""
-        indent = "—      —" * level
+    def render_tag_with_children(tag: Dict[str, Any], level: int = 0, is_last: bool = True, parent_prefixes: List[str] = None) -> None:
+        """Recursively render a tag and all its children with proper tree structure."""
+        if parent_prefixes is None:
+            parent_prefixes = []
+        
+        # Create the tree prefix
+        if level == 0:
+            prefix = ""
+        else:
+            # Build prefix from parent levels
+            prefix_parts = parent_prefixes.copy()
+            if is_last:
+                prefix_parts.append("└─ ")
+            else:
+                prefix_parts.append("├─ ")
+            prefix = "".join(prefix_parts)
         
         col1, col2 = st.columns([4, 1])
         
         with col1:
             if level == 0:
-                st.markdown(f"**{tag['name']}**")
+                st.markdown(f"🏷️ **{tag['name']}**")
             else:
-                st.markdown(f"{indent}• **{tag['name']}**")
+                st.markdown(f"{prefix}🏷️ **{tag['name']}**")
             
             if tag['description']:
-                if level == 0:
-                    st.markdown(f"  *{tag['description']}*")
-                else:
-                    st.markdown(f"{indent}  *{tag['description']}*")
+                description_prefix = prefix.replace("├─", "│ ").replace("└─", "  ") if level > 0 else "  "
+                st.markdown(f"{description_prefix}*{tag['description']}*")
         
         with col2:
             if st.button("✏️ Edit", key=f"edit_tag_{tag['id']}", help="Edit this tag"):
@@ -147,13 +158,25 @@ def _render_tags_list(tags: List[Dict[str, Any]]) -> None:
         
         # Find and render all children of this tag
         child_tags = [t for t in tags if t['parent_tag_id'] == tag['id']]
-        for child_tag in child_tags:
-            render_tag_with_children(child_tag, level + 1)
+        
+        # Update parent prefixes for children
+        new_parent_prefixes = parent_prefixes.copy()
+        if level > 0:
+            if is_last:
+                new_parent_prefixes.append("   ")  # Three spaces for completed branch
+            else:
+                new_parent_prefixes.append("│  ")  # Vertical line for continuing branch
+        
+        for i, child_tag in enumerate(child_tags):
+            is_last_child = (i == len(child_tags) - 1)
+            render_tag_with_children(child_tag, level + 1, is_last_child, new_parent_prefixes)
     
     # Render all root tags and their hierarchies
-    for root_tag in root_tags:
+    for i, root_tag in enumerate(root_tags):
+        is_last_root = (i == len(root_tags) - 1)
         render_tag_with_children(root_tag)
-        st.divider()
+        if not is_last_root:
+            st.divider()
 
 
 def _get_valid_parent_options(db, tags: List[Dict[str, Any]], tag_id: int) -> Dict[str, int]:

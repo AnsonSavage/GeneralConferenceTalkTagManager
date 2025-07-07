@@ -4,7 +4,7 @@ Manage Paragraphs page module - Comprehensive paragraph management interface.
 import streamlit as st
 from typing import Dict, Any
 from ..components.ui_components import FlashcardNavigator, TagSelector, FilterControls
-from ..utils.helpers import highlight_keywords, display_hierarchical_tags, display_matched_keywords
+from ..utils.helpers import highlight_keywords, display_hierarchical_tags_with_indentation, display_matched_keywords
 
 
 def render_manage_paragraphs_page(db) -> None:
@@ -119,7 +119,7 @@ def _render_list_view(paragraphs, db, filters):
             st.markdown(content)
             
             # Tags and management
-            display_hierarchical_tags(paragraph['id'], db)
+            display_hierarchical_tags_with_indentation(paragraph['id'], db)
             
             # Notes
             if paragraph.get('notes'):
@@ -194,7 +194,7 @@ def _render_management_flashcard(paragraph: Dict[str, Any], db, keyword_filter: 
         
         # Tags management
         st.markdown("**🏷️ Current Tags:**")
-        display_hierarchical_tags(paragraph['id'], db)
+        display_hierarchical_tags_with_indentation(paragraph['id'], db)
         
         # Tag management interface
         with st.expander("➕ Add/Edit Tags", expanded=False):

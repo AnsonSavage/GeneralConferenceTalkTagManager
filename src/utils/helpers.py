@@ -364,3 +364,302 @@ def display_matched_keywords(paragraph_data: Dict[str, Any]) -> None:
             # Display keywords as red badges
             keywords_html = " ".join([f'<span style="background-color: #ffebee; color: #d32f2f; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; margin: 2px;">{keyword}</span>' for keyword in keywords_list])
             st.markdown(f'<div style="margin-bottom: 10px;">{keywords_html}</div>', unsafe_allow_html=True)
+
+
+def display_hierarchical_tags_with_indentation(paragraph_id: int, db) -> None:
+    """
+    Display tags with proper visual hierarchy using Unicode characters and styled indentation.
+    
+    Args:
+        paragraph_id: ID of the paragraph
+        db: Database instance
+    """
+    tag_data = db.get_paragraph_tags_with_hierarchy(paragraph_id)
+    
+    if tag_data['explicit'] or tag_data['implicit']:
+        st.markdown("**Current Tags:**")
+        
+        # Get all tags for this paragraph to build hierarchy
+        all_tags = db.get_paragraph_tags(paragraph_id)
+        
+        # Build a hierarchy tree
+        tag_tree = _build_tag_tree(all_tags, db)
+        
+        if tag_tree:
+            _render_tag_tree(tag_tree, paragraph_id, db, level=0)
+    else:
+        st.info("No tags assigned to this paragraph yet.")
+
+
+def _build_tag_tree(paragraph_tags: List[Dict], db) -> List[Dict]:
+    """
+    Build a hierarchical tree structure from paragraph tags.
+    
+    Args:
+        paragraph_tags: List of tag dictionaries for the paragraph
+        db: Database instance
+        
+    Returns:
+        List of root tags with children nested
+    """
+    # Get all tags to understand the full hierarchy
+    all_tags = {tag['id']: tag for tag in db.get_all_tags()}
+    paragraph_tag_ids = {tag['id'] for tag in paragraph_tags}
+    
+    # Create tag nodes with children arrays
+    tag_nodes = {}
+    for tag in paragraph_tags:
+        tag_nodes[tag['id']] = {
+            'id': tag['id'],
+            'name': tag['name'],
+            'description': tag['description'],
+            'parent_tag_id': tag['parent_tag_id'],
+            'children': []
+        }
+    
+    # Determine which tags are explicit (leaf nodes in this paragraph's context)
+    # A tag is explicit if no child tags are also assigned to this paragraph
+    for tag_id in paragraph_tag_ids:
+        is_explicit = True
+        # Check if any children of this tag are also in the paragraph's tags
+        for other_tag_id in paragraph_tag_ids:
+            if other_tag_id != tag_id:
+                other_tag = all_tags.get(other_tag_id, {})
+                if other_tag.get('parent_tag_id') == tag_id:
+                    is_explicit = False
+                    break
+        
+        tag_nodes[tag_id]['is_explicit'] = is_explicit
+    
+    # Build parent-child relationships
+    root_tags = []
+    for tag in paragraph_tags:
+        tag_id = tag['id']
+        parent_id = tag['parent_tag_id']
+        
+        if parent_id is None or parent_id not in paragraph_tag_ids:
+            # This is a root tag (no parent or parent not in paragraph tags)
+            root_tags.append(tag_nodes[tag_id])
+        elif parent_id in tag_nodes:
+            # Add as child to parent
+            tag_nodes[parent_id]['children'].append(tag_nodes[tag_id])
+    
+    return root_tags
+
+
+def _render_tag_tree(tag_tree: List[Dict], paragraph_id: int, db, level: int = 0):
+    """
+    Render the tag tree with proper indentation and styling.
+    
+    Args:
+        tag_tree: List of tag nodes with children
+        paragraph_id: ID of the paragraph
+        db: Database instance
+        level: Current nesting level
+    """
+    for i, tag_node in enumerate(tag_tree):
+        is_last = (i == len(tag_tree) - 1)
+        
+        # Create indentation using Unicode box drawing characters
+        if level == 0:
+            prefix = ""
+        else:
+            # Build the prefix based on level and position
+            prefix_parts = []
+            for l in range(level):
+                if l == level - 1:
+                    # Last level - use appropriate connector
+                    prefix_parts.append("└─ " if is_last else "├─ ")
+                else:
+                    # Middle levels - use vertical line or space
+                    prefix_parts.append("│  ")
+            prefix = "".join(prefix_parts)
+        
+        # Different styling for explicit vs implicit tags
+        if tag_node['is_explicit']:
+            # Explicit tag - removable
+            col1, col2 = st.columns([6, 1])
+            with col1:
+                st.markdown(f"{prefix}🏷️ **{tag_node['name']}**")
+            with col2:
+                if st.button("❌", key=f"remove_tree_{paragraph_id}_{tag_node['id']}", 
+                           help=f"Remove {tag_node['name']}"):
+                    db.remove_tag_from_paragraph(paragraph_id, tag_node['id'])
+                    db.update_paragraph_reviewed_status()
+                    st.rerun()
+        else:
+            # Implicit tag - grayed out
+            st.markdown(f"{prefix}🔗 :gray[{tag_node['name']}] *(inherited)*")
+        
+        # Render children recursively
+        if tag_node['children']:
+            _render_tag_tree(tag_node['children'], paragraph_id, db, level + 1)
+
+
+def display_tag_hierarchy_for_selection(db, exclude_tag_ids: List[int] = None) -> Dict:
+    """
+    Display tag hierarchy for selection with proper indentation.
+    
+    Args:
+        db: Database instance
+        exclude_tag_ids: List of tag IDs to exclude from display
+        
+    Returns:
+        Dictionary with selected tag information
+    """
+    if exclude_tag_ids is None:
+        exclude_tag_ids = []
+    
+    all_tags = db.get_all_tags()
+    available_tags = [tag for tag in all_tags if tag['id'] not in exclude_tag_ids]
+    
+    if not available_tags:
+        st.info("No tags available for selection.")
+        return None
+    
+    # Build hierarchy tree
+    tag_tree = _build_full_tag_tree(available_tags)
+    
+    st.markdown("**Select a tag:**")
+    
+    # Use radio buttons with hierarchical display
+    tag_options = []
+    tag_display_names = []
+    
+    def collect_tag_options(nodes: List[Dict], level: int = 0):
+        for node in nodes:
+            # Create display name with indentation
+            if level == 0:
+                display_name = f"🏷️ {node['name']}"
+            else:
+                indent = "　" * level  # Use full-width space for indentation
+                display_name = f"{indent}└─ {node['name']}"
+            
+            tag_options.append(node['id'])
+            tag_display_names.append(display_name)
+            
+            # Add children
+            if node['children']:
+                collect_tag_options(node['children'], level + 1)
+    
+    collect_tag_options(tag_tree)
+    
+    if tag_display_names:
+        selected_index = st.radio(
+            "Choose tag:",
+            range(len(tag_display_names)),
+            format_func=lambda x: tag_display_names[x],
+            key="tag_selection_radio"
+        )
+        
+        if selected_index is not None:
+            selected_tag_id = tag_options[selected_index]
+            selected_tag = next(tag for tag in available_tags if tag['id'] == selected_tag_id)
+            return selected_tag
+    
+    return None
+
+
+def _build_full_tag_tree(tags: List[Dict]) -> List[Dict]:
+    """
+    Build a complete hierarchical tree from all tags.
+    
+    Args:
+        tags: List of all tag dictionaries
+        
+    Returns:
+        List of root tags with children nested
+    """
+    tag_dict = {tag['id']: {**tag, 'children': []} for tag in tags}
+    root_tags = []
+    
+    # Build parent-child relationships
+    for tag in tags:
+        if tag['parent_tag_id'] is None:
+            root_tags.append(tag_dict[tag['id']])
+        elif tag['parent_tag_id'] in tag_dict:
+            parent = tag_dict[tag['parent_tag_id']]
+            parent['children'].append(tag_dict[tag['id']])
+    
+    return root_tags
+
+
+def display_tag_breadcrumb(tag_id: int, db) -> str:
+    """
+    Display tag breadcrumb showing the full hierarchy path.
+    
+    Args:
+        tag_id: ID of the tag
+        db: Database instance
+        
+    Returns:
+        Breadcrumb string
+    """
+    hierarchy = db.get_tag_hierarchy(tag_id)
+    hierarchy.reverse()  # Start from root
+    
+    all_tags = {tag['id']: tag for tag in db.get_all_tags()}
+    
+    breadcrumb_parts = []
+    for tag_id in hierarchy:
+        if tag_id in all_tags:
+            breadcrumb_parts.append(all_tags[tag_id]['name'])
+    
+    return " > ".join(breadcrumb_parts)
+
+
+def display_compact_tag_list(tags: List[Dict], removable: bool = True, 
+                           paragraph_id: int = None, db=None) -> None:
+    """
+    Display tags in a compact, visually appealing format.
+    
+    Args:
+        tags: List of tag dictionaries
+        removable: Whether tags can be removed
+        paragraph_id: ID of paragraph (needed for removal)
+        db: Database instance (needed for removal)
+    """
+    if not tags:
+        st.info("No tags assigned.")
+        return
+    
+    # Group tags by hierarchy level for better display
+    root_tags = [tag for tag in tags if tag.get('parent_tag_id') is None]
+    child_tags = [tag for tag in tags if tag.get('parent_tag_id') is not None]
+    
+    # Display as styled badges
+    tag_html_parts = []
+    
+    for tag in root_tags:
+        breadcrumb = display_tag_breadcrumb(tag['id'], db) if db else tag['name']
+        if removable and paragraph_id and db:
+            tag_html_parts.append(f'''
+                <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                           color: white; padding: 4px 8px; border-radius: 12px; 
+                           font-size: 11px; margin: 2px; display: inline-block;">
+                    🏷️ {tag['name']}
+                </span>
+            ''')
+        else:
+            tag_html_parts.append(f'''
+                <span style="background: #f8f9fa; color: #495057; border: 1px solid #dee2e6;
+                           padding: 4px 8px; border-radius: 12px; 
+                           font-size: 11px; margin: 2px; display: inline-block;">
+                    🏷️ {tag['name']}
+                </span>
+            ''')
+    
+    if tag_html_parts:
+        st.markdown(f'<div>{"".join(tag_html_parts)}</div>', unsafe_allow_html=True)
+        
+        # Add remove buttons if needed
+        if removable and paragraph_id and db:
+            cols = st.columns(min(len(tags), 6))
+            for i, tag in enumerate(tags):
+                with cols[i % 6]:
+                    if st.button(f"❌", key=f"remove_compact_{paragraph_id}_{tag['id']}", 
+                               help=f"Remove {tag['name']}"):
+                        db.remove_tag_from_paragraph(paragraph_id, tag['id'])
+                        if hasattr(db, 'update_paragraph_reviewed_status'):
+                            db.update_paragraph_reviewed_status()
+                        st.rerun()
