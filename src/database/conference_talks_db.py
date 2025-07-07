@@ -979,7 +979,7 @@ class ConferenceTalksDB:
         
         # Process each root tag
         for root_tag in sorted(root_tags, key=lambda x: x['name']):
-            self._export_tag_hierarchy(root_tag, markdown_content, cursor, level=1)
+            self._export_tag_hierarchy(root_tag, markdown_content, cursor, tags_dict, level=1)
         
         conn.close()
         
@@ -993,10 +993,37 @@ class ConferenceTalksDB:
         
         return full_content
 
-    def _export_tag_hierarchy(self, tag_info: Dict, markdown_content: List[str], cursor, level: int = 1):
+    def _get_most_specific_tags_for_paragraph(self, paragraph_id: int, cursor, tags_dict: Dict) -> List[int]:
+        """Get the most specific (leaf) tags for a paragraph"""
+        # Get all tags for this paragraph
+        cursor.execute("""
+            SELECT tag_id FROM paragraph_tags WHERE paragraph_id = ?
+        """, (paragraph_id,))
+        paragraph_tag_ids = {row[0] for row in cursor.fetchall()}
+        
+        # Find leaf tags (tags that don't have any children that are also tagged for this paragraph)
+        leaf_tags = []
+        
+        for tag_id in paragraph_tag_ids:
+            # Check if any children of this tag are also tagged for this paragraph
+            has_tagged_children = False
+            
+            # Find all children of this tag
+            for other_tag_id, tag_info in tags_dict.items():
+                if tag_info['parent_id'] == tag_id and other_tag_id in paragraph_tag_ids:
+                    has_tagged_children = True
+                    break
+            
+            # If no children are tagged, this is a leaf tag
+            if not has_tagged_children:
+                leaf_tags.append(tag_id)
+        
+        return leaf_tags
+
+    def _export_tag_hierarchy(self, tag_info: Dict, markdown_content: List[str], cursor, tags_dict: Dict, level: int = 1):
         """Recursively export tag hierarchy to markdown"""
         # Create heading based on level
-        heading_prefix = '#' * level
+        heading_prefix = '#' * (level + 1)  # Start at h2 since h1 is the main title
         markdown_content.append(f"{heading_prefix} {tag_info['name']}")
         
         if tag_info['description']:
@@ -1004,11 +1031,12 @@ class ConferenceTalksDB:
         
         markdown_content.append("")
         
-        # Get paragraphs for this tag
+        # Get paragraphs that should be displayed under this specific tag
+        # Only show paragraphs where this tag is one of the most specific tags
         cursor.execute("""
             SELECT DISTINCT
                 p.id, p.content, p.notes, p.matched_keywords,
-                t.title, t.speaker, t.conference_date
+                t.title, t.speaker, t.conference_date, t.hyperlink
             FROM paragraphs p
             JOIN talks t ON p.talk_id = t.id
             JOIN paragraph_tags pt ON p.id = pt.paragraph_id
@@ -1016,9 +1044,19 @@ class ConferenceTalksDB:
             ORDER BY t.conference_date, t.title, p.paragraph_number
         """, (tag_info['id'],))
         
-        paragraphs = cursor.fetchall()
+        all_paragraphs = cursor.fetchall()
         
-        for para_id, content, notes, matched_keywords_json, title, speaker, conf_date in paragraphs:
+        # Filter to only include paragraphs where this tag is the most specific
+        paragraphs_to_show = []
+        for paragraph_row in all_paragraphs:
+            para_id = paragraph_row[0]
+            most_specific_tags = self._get_most_specific_tags_for_paragraph(para_id, cursor, tags_dict)
+            
+            # Only include this paragraph if the current tag is one of the most specific
+            if tag_info['id'] in most_specific_tags:
+                paragraphs_to_show.append(paragraph_row)
+        
+        for para_id, content, notes, matched_keywords_json, title, speaker, conf_date, hyperlink in paragraphs_to_show:
             # Add paragraph content as bullet point
             markdown_content.append(f"• {content}")
             
@@ -1033,24 +1071,29 @@ class ConferenceTalksDB:
             if notes and notes.strip():
                 markdown_content.append(f"  - **Note:** {notes.strip()}")
             
-            # Check if paragraph is assigned to other tags
-            cursor.execute("""
-                SELECT t.name
-                FROM tags t
-                JOIN paragraph_tags pt ON t.id = pt.tag_id
-                WHERE pt.paragraph_id = ? AND t.id != ?
-                ORDER BY t.name
-            """, (para_id, tag_info['id']))
+            # Check if paragraph is assigned to other most specific tags (siblings)
+            most_specific_tags = self._get_most_specific_tags_for_paragraph(para_id, cursor, tags_dict)
+            other_specific_tags = [tid for tid in most_specific_tags if tid != tag_info['id']]
             
-            other_tags = [row[0] for row in cursor.fetchall()]
-            if other_tags:
-                other_tags_str = ", ".join(other_tags)
-                markdown_content.append(f"  - **Also found under:** {other_tags_str}")
+            if other_specific_tags:
+                # Get names of other specific tags
+                cursor.execute(f"""
+                    SELECT name FROM tags WHERE id IN ({','.join(['?'] * len(other_specific_tags))})
+                    ORDER BY name
+                """, other_specific_tags)
+                other_tag_names = [row[0] for row in cursor.fetchall()]
+                
+                if other_tag_names:
+                    other_tags_str = ", ".join(other_tag_names)
+                    markdown_content.append(f"  - **Also found under:** {other_tags_str}")
             
-            # Add source information
-            markdown_content.append(f"  - **Source:** {speaker} - {title} ({conf_date})")
+            # Add source information with hyperlink
+            if hyperlink and hyperlink.strip():
+                markdown_content.append(f"  - **Source:** [{speaker} - {title} ({conf_date})]({hyperlink})")
+            else:
+                markdown_content.append(f"  - **Source:** {speaker} - {title} ({conf_date})")
             markdown_content.append("")
         
         # Process children recursively
         for child_tag in sorted(tag_info['children'], key=lambda x: x['name']):
-            self._export_tag_hierarchy(child_tag, markdown_content, cursor, level + 1)
+            self._export_tag_hierarchy(child_tag, markdown_content, cursor, tags_dict, level + 1)
