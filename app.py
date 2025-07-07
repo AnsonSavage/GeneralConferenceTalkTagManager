@@ -12,6 +12,7 @@ sys.path.append(str(Path(__file__).parent / "src"))
 from src.config.settings import APP_TITLE, APP_ICON, DEFAULT_LAYOUT, NAVIGATION_PAGES, SIDEBAR_TIPS
 from src.database import ConferenceTalksDB
 from src.pages.search_and_tag import render_search_and_tag_page
+from src.pages.add_tags_to_paragraphs import render_add_tags_page
 from src.pages.manage_paragraphs import render_manage_paragraphs_page
 from src.pages.manage_talks import render_manage_talks_page
 from src.pages.manage_tags import render_manage_tags_page
@@ -47,6 +48,8 @@ def main():
     # Route to appropriate page
     if page == "🔍 Search & Tag":
         render_search_and_tag_page(db)
+    elif page == "📝 Add Tags to Paragraphs":
+        render_add_tags_page(db)
     elif page == "📄 Manage Paragraphs":
         render_manage_paragraphs_page(db)
     elif page == "📚 Manage Talks":

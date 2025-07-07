@@ -148,6 +148,62 @@ class FlashcardNavigator:
                     st.session_state[self.session_key] = jump_to - 1
                     st.rerun()
 
+    def render_floating_navigation(self) -> None:
+        """Render floating navigation controls at the bottom of the page."""
+        if not self.items:
+            return
+            
+        current_index = self.get_current_index()
+        
+        # Create floating navigation container
+        st.markdown("""
+        <style>
+        .floating-nav {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(28, 131, 225, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 50px;
+            padding: 15px 25px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            color: white;
+            font-weight: bold;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Progress and navigation in columns
+        col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
+        
+        with col1:
+            if st.button("⬅️", disabled=current_index == 0, key=f"floating_prev_{self.session_key}", help="Previous"):
+                st.session_state[self.session_key] = current_index - 1
+                st.rerun()
+        
+        with col2:
+            if st.button("➡️", disabled=current_index == self.total_items - 1, key=f"floating_next_{self.session_key}", help="Next"):
+                st.session_state[self.session_key] = current_index + 1
+                st.rerun()
+        
+        with col3:
+            progress = (current_index + 1) / self.total_items
+            st.progress(progress, text=f"{current_index + 1} of {self.total_items}")
+        
+        with col4:
+            if st.button("🔄", key=f"floating_random_{self.session_key}", help="Random"):
+                st.session_state[self.session_key] = get_random_index(self.total_items)
+                st.rerun()
+        
+        with col5:
+            if st.button("⏭️", key=f"floating_first_{self.session_key}", help="First"):
+                st.session_state[self.session_key] = 0
+                st.rerun()
 
 class TagSelector:
     """Component for selecting and managing tags."""
@@ -202,65 +258,79 @@ class TagSelector:
                 st.rerun()
 
     def render_enhanced_tag_search(self, key_suffix: str = "") -> None:
-        """Render enhanced tag search interface with autocomplete-like functionality."""
-        # Search input with live filtering
+        """Render enhanced tag search interface with real-time autocomplete functionality."""
+        # Search input with live filtering using on_change callback
+        tag_search_key = f"enhanced_tag_search_{key_suffix}"
+        
+        # Clear search field if flag is set
+        if st.session_state.get(f"clear_search_{key_suffix}", False):
+            st.session_state[tag_search_key] = ""
+            st.session_state[f"tag_suggestions_{key_suffix}"] = []
+            st.session_state[f"clear_search_{key_suffix}"] = False
+        
+        def update_tag_suggestions():
+            """Callback to update tag suggestions in real-time."""
+            search_term = st.session_state.get(tag_search_key, "")
+            if search_term:
+                st.session_state[f"tag_suggestions_{key_suffix}"] = self.db.search_tags(search_term)
+            else:
+                st.session_state[f"tag_suggestions_{key_suffix}"] = []
+        
         tag_search = st.text_input(
             "🔍 Search or create tags:",
-            key=f"enhanced_tag_search_{key_suffix}",
+            key=tag_search_key,
             placeholder="Start typing to search existing tags or create new ones...",
-            help="Search for existing tags or type a new tag name to create it"
+            help="Search for existing tags or type a new tag name to create it",
+            on_change=update_tag_suggestions
         )
         
-        if tag_search:
-            matching_tags = self.db.search_tags(tag_search)
+        # Get current suggestions from session state
+        matching_tags = st.session_state.get(f"tag_suggestions_{key_suffix}", [])
+        
+        if tag_search and matching_tags:
+            st.markdown("**🎯 Matching tags:**")
             
-            if matching_tags:
-                st.markdown("**🎯 Matching tags:**")
+            # Add dropdown selection for matching tags
+            if len(matching_tags) > 1:
+                tag_options = [f"{tag['name']} - {tag['description'] or 'No description'}" for tag in matching_tags]
+                selected_option = st.selectbox(
+                    "Select a tag to add:",
+                    options=[""] + tag_options,
+                    key=f"tag_dropdown_{key_suffix}",
+                    help="Use arrow keys to navigate and Enter to select"
+                )
                 
-                # Add dropdown selection for matching tags
-                if len(matching_tags) > 1:
-                    tag_options = [f"{tag['name']} - {tag['description'] or 'No description'}" for tag in matching_tags]
-                    selected_option = st.selectbox(
-                        "Select a tag to add:",
-                        options=[""] + tag_options,
-                        key=f"tag_dropdown_{key_suffix}",
-                        help="Use arrow keys to navigate and Enter to select"
-                    )
+                if selected_option:
+                    # Find the selected tag
+                    selected_tag_name = selected_option.split(" - ")[0]
+                    selected_tag = next((tag for tag in matching_tags if tag['name'] == selected_tag_name), None)
                     
-                    if selected_option:
-                        # Find the selected tag
-                        selected_tag_name = selected_option.split(" - ")[0]
-                        selected_tag = next((tag for tag in matching_tags if tag['name'] == selected_tag_name), None)
-                        
-                        if selected_tag and st.button("➕ Add Selected Tag", key=f"add_selected_{key_suffix}"):
-                            if self.paragraph_id:
-                                self.db.tag_paragraph_with_hierarchy(self.paragraph_id, selected_tag['id'])
-                                self.db.update_paragraph_reviewed_status()
-                                st.success(f"Added '{selected_tag['name']}' with hierarchy!")
-                                st.rerun()
-                
-                # Display matching tags in a more compact format
-                for tag in matching_tags[:8]:  # Limit to 8 matches
-                    col1, col2, col3 = st.columns([3, 1, 1])
-                    with col1:
-                        st.markdown(f"🏷️ **{tag['name']}**")
-                        if tag['description']:
-                            st.caption(tag['description'])
-                    with col2:
-                        if st.button("➕ Add", key=f"add_enhanced_{tag['id']}_{key_suffix}"):
-                            if self.paragraph_id:
-                                self.db.tag_paragraph_with_hierarchy(self.paragraph_id, tag['id'])
-                                self.db.update_paragraph_reviewed_status()
-                                st.success(f"Added '{tag['name']}' with hierarchy!")
-                                st.rerun()
-                    with col3:
-                        if tag['parent_tag_id']:
-                            st.caption("🔗 Has parent")
-            else:
-                st.info(f"No matching tags found for '{tag_search}'")
+                    if selected_tag and st.button("➕ Add Selected Tag", key=f"add_selected_{key_suffix}"):
+                        if self.paragraph_id:
+                            self.db.tag_paragraph_with_hierarchy(self.paragraph_id, selected_tag['id'])
+                            self.db.update_paragraph_reviewed_status()
+                            # Set flag to clear search and suggestions
+                            st.session_state[f"clear_search_{key_suffix}"] = True
+                            st.success(f"✅ Added '{selected_tag['name']}' with hierarchy!")
+                            st.rerun()
             
+            # Display matching tags in a more compact format
+            st.markdown("**Quick add buttons:**")
+            cols = st.columns(min(len(matching_tags), 3))
+            for i, tag in enumerate(matching_tags[:6]):  # Limit to 6 matches for better layout
+                with cols[i % 3]:
+                    if st.button(f"➕ {tag['name']}", key=f"add_enhanced_{tag['id']}_{key_suffix}"):
+                        if self.paragraph_id:
+                            self.db.tag_paragraph_with_hierarchy(self.paragraph_id, tag['id'])
+                            self.db.update_paragraph_reviewed_status()
+                            # Set flag to clear search and suggestions
+                            st.session_state[f"clear_search_{key_suffix}"] = True
+                            st.success(f"✅ Added '{tag['name']}' with hierarchy!")
+                            st.rerun()
+        
+        elif tag_search and not matching_tags:
+            st.info(f"No matching tags found for '{tag_search}'")
             # Always show option to create new tag
-            st.markdown("---")
             if st.button(f"✨ Create new tag: **{tag_search}**", key=f"create_enhanced_{key_suffix}"):
                 st.session_state[f'creating_enhanced_tag_{key_suffix}'] = tag_search
                 st.rerun()
@@ -553,4 +623,73 @@ class FilterControls:
             'keyword_filter': keyword_filter,
             'untagged_only': untagged_only,
             'show_reviewed': show_reviewed
+        }
+    
+    def render_comprehensive_paragraph_filters(self) -> Dict[str, Any]:
+        """Render comprehensive paragraph filtering controls for management interface."""
+        with st.expander("🔍 Advanced Filter Options", expanded=True):
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                # Tag filter
+                all_tags = self.db.get_all_tags()
+                tag_options = ["All Tags", "No Tags"] + [tag['name'] for tag in all_tags]
+                selected_tag_filter = st.selectbox(
+                    "Filter by Tag:",
+                    options=tag_options,
+                    help="Filter paragraphs by tag assignment"
+                )
+            
+            with col2:
+                # Keyword filter
+                keywords = self.db.get_keywords()
+                keyword_options = ["All Keywords"] + keywords
+                selected_keyword_filter = st.selectbox(
+                    "Filter by Keyword:",
+                    options=keyword_options,
+                    help="Filter paragraphs by keyword matches"
+                )
+            
+            with col3:
+                # Review status filter
+                review_filter = st.selectbox(
+                    "Review Status:",
+                    options=["All", "Reviewed Only", "Unreviewed Only"],
+                    help="Filter by review status"
+                )
+            
+            with col4:
+                # Date range filter
+                conference_years = ["All Years"] + [str(year) for year in range(2000, 2026)]
+                selected_year = st.selectbox(
+                    "Conference Year:",
+                    options=conference_years,
+                    help="Filter by conference year"
+                )
+        
+        # Process filters
+        if selected_tag_filter == "All Tags":
+            tag_filter = None
+            untagged_only = False
+        elif selected_tag_filter == "No Tags":
+            tag_filter = None
+            untagged_only = True
+        else:
+            tag_filter = selected_tag_filter
+            untagged_only = False
+        
+        keyword_filter = selected_keyword_filter if selected_keyword_filter != "All Keywords" else None
+        
+        reviewed_only = None
+        if review_filter == "Reviewed Only":
+            reviewed_only = True
+        elif review_filter == "Unreviewed Only":
+            reviewed_only = False
+        
+        return {
+            'tag_filter': tag_filter,
+            'keyword_filter': keyword_filter,
+            'untagged_only': untagged_only,
+            'reviewed_only': reviewed_only,
+            'year_filter': selected_year if selected_year != "All Years" else None
         }

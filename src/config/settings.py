@@ -30,6 +30,7 @@ DEFAULT_FILTER_EXPANDED = True
 # Navigation pages
 NAVIGATION_PAGES = [
     "🔍 Search & Tag",
+    "📝 Add Tags to Paragraphs",
     "📄 Manage Paragraphs", 
     "📚 Manage Talks",
     "🏷️ Manage Tags",
