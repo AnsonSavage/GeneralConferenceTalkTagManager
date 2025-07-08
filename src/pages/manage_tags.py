@@ -2,7 +2,6 @@
 Manage Tags page module.
 """
 import streamlit as st
-import sqlite3
 from typing import List, Dict, Any, Optional
 
 
@@ -127,12 +126,8 @@ def _render_tag_edit_form(db, tags: List[Dict[str, Any]]) -> None:
 
 def _render_tag_deletion_confirmation(db, tag_to_edit: Dict[str, Any]) -> None:
     """Render tag deletion confirmation dialog outside of form."""
-    # Check if tag has any paragraphs
-    conn = sqlite3.connect(db.db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM paragraph_tags WHERE tag_id = ?", (tag_to_edit['id'],))
-    paragraph_count = cursor.fetchone()[0]
-    conn.close()
+    # Check if tag has any paragraphs using the abstract method
+    paragraph_count = db.get_paragraph_count_for_tag(tag_to_edit['id'])
     
     if paragraph_count > 0:
         # Show confirmation dialog
@@ -149,16 +144,12 @@ def _render_tag_deletion_confirmation(db, tag_to_edit: Dict[str, Any]) -> None:
     with col1:
         if st.button("🗑️ Yes, Delete Tag", type="primary", key="confirm_delete"):
             if paragraph_count > 0:
-                # Remove tag from all paragraphs first
-                conn = sqlite3.connect(db.db_path)
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM paragraph_tags WHERE tag_id = ?", (tag_to_edit['id'],))
-                conn.commit()
-                conn.close()
+                # Remove tag from all paragraphs first using the abstract method
+                affected_count = db.remove_tag_from_all_paragraphs(tag_to_edit['id'])
                 
                 # Then delete the tag
                 db.delete_tag(tag_to_edit['id'])
-                st.success(f"✅ Tag '{tag_to_edit['name']}' deleted successfully and removed from {paragraph_count} paragraph(s)!")
+                st.success(f"✅ Tag '{tag_to_edit['name']}' deleted successfully and removed from {affected_count} paragraph(s)!")
             else:
                 # No paragraphs assigned, safe to delete directly
                 db.delete_tag(tag_to_edit['id'])
@@ -279,47 +270,3 @@ def _handle_tag_update(db, parent_options: Dict[str, int], tag_id: int,
         st.rerun()
     except Exception as e:
         st.error(f"Error updating tag: {str(e)}")
-
-
-def _handle_tag_deletion(db, tag_to_edit: Dict[str, Any]) -> None:
-    """Handle tag deletion with confirmation dialog."""
-    # Check if tag has any paragraphs
-    conn = sqlite3.connect(db.db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM paragraph_tags WHERE tag_id = ?", (tag_to_edit['id'],))
-    paragraph_count = cursor.fetchone()[0]
-    conn.close()
-    
-    if paragraph_count > 0:
-        # Show confirmation dialog
-        st.warning(f"⚠️ This tag is assigned to **{paragraph_count}** paragraph(s).")
-        st.markdown("**Are you sure you want to delete this tag?** This will:")
-        st.markdown("- Remove the tag from all assigned paragraphs")
-        st.markdown("- Permanently delete the tag from the system")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🗑️ Yes, Delete Tag", type="primary", key="confirm_delete"):
-                # Remove tag from all paragraphs first
-                conn = sqlite3.connect(db.db_path)
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM paragraph_tags WHERE tag_id = ?", (tag_to_edit['id'],))
-                conn.commit()
-                conn.close()
-                
-                # Then delete the tag
-                db.delete_tag(tag_to_edit['id'])
-                st.success(f"✅ Tag '{tag_to_edit['name']}' deleted successfully and removed from {paragraph_count} paragraph(s)!")
-                del st.session_state.editing_tag
-                st.rerun()
-        
-        with col2:
-            if st.button("❌ Cancel", key="cancel_delete"):
-                st.info("Tag deletion cancelled.")
-                st.rerun()
-    else:
-        # No paragraphs assigned, safe to delete directly
-        db.delete_tag(tag_to_edit['id'])
-        st.success(f"✅ Tag '{tag_to_edit['name']}' deleted successfully!")
-        del st.session_state.editing_tag
-        st.rerun()

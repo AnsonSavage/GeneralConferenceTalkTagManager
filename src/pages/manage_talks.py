@@ -3,7 +3,6 @@ Manage Talks page module.
 """
 import streamlit as st
 import pandas as pd
-import sqlite3
 from typing import List, Dict, Any
 
 
@@ -45,22 +44,12 @@ def _render_keyword_usage_metrics(db) -> None:
     """Render keyword usage metrics."""
     st.subheader("Keyword Usage")
     
-    conn = sqlite3.connect(db.db_path)
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT k.keyword, COUNT(DISTINCT pk.paragraph_id) as usage_count
-        FROM keywords k
-        JOIN paragraph_keywords pk ON k.id = pk.keyword_id
-        GROUP BY k.keyword
-        ORDER BY usage_count DESC
-    """)
-    
-    keyword_usage = cursor.fetchall()
-    conn.close()
+    keyword_usage = db.get_keyword_usage_statistics()
     
     if keyword_usage:
         cols = st.columns(3)
-        for i, (keyword, count) in enumerate(keyword_usage):
+        for i, stat in enumerate(keyword_usage):
+            keyword = stat['keyword']
+            count = stat['usage_count']
             with cols[i % 3]:
                 st.metric(keyword, count, help=f"Found in {count} paragraphs")

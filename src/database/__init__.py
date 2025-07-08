@@ -1,6 +1,11 @@
 """
 Database module initialization.
 """
-from .conference_talks_db import ConferenceTalksDB
+from .base_database import BaseDatabaseInterface
+from .conference_talks_db import SQLiteConferenceTalksDB
+from .database_factory import DatabaseFactory, get_database
 
-__all__ = ['ConferenceTalksDB']
+# For backward compatibility
+ConferenceTalksDB = SQLiteConferenceTalksDB
+
+__all__ = ['BaseDatabaseInterface', 'SQLiteConferenceTalksDB', 'ConferenceTalksDB', 'DatabaseFactory', 'get_database']

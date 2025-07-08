@@ -34,30 +34,13 @@ def render_export_page(db):
     with col2:
         st.markdown("### Export Preview")
         
-        # Get some stats about what will be exported
-        all_tags = db.get_all_tags()
-        root_tags = [tag for tag in all_tags if tag['parent_tag_id'] is None]
+        # Get export statistics using the abstract method
+        stats = db.get_export_statistics()
         
-        # Count paragraphs with tags
-        conn = db.conn if hasattr(db, 'conn') else None
-        if not conn:
-            import sqlite3
-            conn = sqlite3.connect(db.db_path)
-            
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(DISTINCT paragraph_id) FROM paragraph_tags")
-        tagged_paragraphs = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM paragraphs")
-        total_paragraphs = cursor.fetchone()[0]
-        
-        if not hasattr(db, 'conn'):
-            conn.close()
-        
-        st.metric("Root Tags", len(root_tags))
-        st.metric("Total Tags", len(all_tags))
-        st.metric("Tagged Paragraphs", tagged_paragraphs)
-        st.metric("Total Paragraphs", total_paragraphs)
+        st.metric("Root Tags", stats['root_tags'])
+        st.metric("Total Tags", stats['total_tags'])
+        st.metric("Tagged Paragraphs", stats['tagged_paragraphs'])
+        st.metric("Total Paragraphs", stats['total_paragraphs'])
     
     st.markdown("---")
     
@@ -203,145 +186,82 @@ def _generate_export_preview(db) -> str:
     markdown_content.append(f"*Preview generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n")
     markdown_content.append("*This preview shows only the first 2 root tags. Full export will include all tags.*\n")
     
-    import sqlite3
-    conn = sqlite3.connect(db.db_path)
-    cursor = conn.cursor()
-    
-    # Build tags dict for hierarchy
-    tags_dict = {}
-    for tag in all_tags:
-        tag_info = {
-            'id': tag['id'],
-            'name': tag['name'],
-            'description': tag['description'],
-            'parent_id': tag['parent_tag_id'],
-            'children': []
-        }
-        tags_dict[tag['id']] = tag_info
-    
-    # Build parent-child relationships
-    for tag_info in tags_dict.values():
-        if tag_info['parent_id'] is not None:
-            parent = tags_dict.get(tag_info['parent_id'])
-            if parent:
-                parent['children'].append(tag_info)
-    
+    # For preview, we'll just show the tag structure without full content
     for root_tag in preview_tags:
-        tag_info = tags_dict[root_tag['id']]
-        db._export_tag_hierarchy(tag_info, markdown_content, cursor, level=1)
+        markdown_content.append(f"\n## {root_tag['name']}")
+        if root_tag['description']:
+            markdown_content.append(f"*{root_tag['description']}*")
+        
+        # Find children
+        child_tags = [tag for tag in all_tags if tag['parent_tag_id'] == root_tag['id']]
+        for child_tag in child_tags[:3]:  # Limit to first 3 children
+            markdown_content.append(f"\n### {child_tag['name']}")
+            if child_tag['description']:
+                markdown_content.append(f"*{child_tag['description']}*")
+        
+        if len(child_tags) > 3:
+            markdown_content.append(f"\n*... and {len(child_tags) - 3} more subtags*")
     
     if len(root_tags) > 2:
         markdown_content.append(f"\n*... and {len(root_tags) - 2} more root tags in full export*")
     
-    conn.close()
     return '\n'.join(markdown_content)
 
 
 def _show_export_statistics(db):
     """Show detailed statistics about what will be exported."""
-    import sqlite3
-    
-    conn = sqlite3.connect(db.db_path)
-    cursor = conn.cursor()
-    
     st.markdown("### 📊 Export Statistics")
     
-    # Tag statistics
-    cursor.execute("SELECT COUNT(*) FROM tags")
-    total_tags = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM tags WHERE parent_tag_id IS NULL")
-    root_tags = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM tags WHERE parent_tag_id IS NOT NULL")
-    child_tags = cursor.fetchone()[0]
-    
-    # Paragraph statistics
-    cursor.execute("SELECT COUNT(*) FROM paragraphs")
-    total_paragraphs = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(DISTINCT paragraph_id) FROM paragraph_tags")
-    tagged_paragraphs = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM paragraphs WHERE notes IS NOT NULL AND notes != ''")
-    paragraphs_with_notes = cursor.fetchone()[0]
-    
-    # Keyword statistics
-    cursor.execute("SELECT COUNT(*) FROM keywords")
-    total_keywords = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(DISTINCT keyword_id) FROM paragraph_keywords")
-    used_keywords = cursor.fetchone()[0]
+    # Get statistics using abstract methods
+    stats = db.get_export_statistics()
     
     # Display in columns
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Total Tags", total_tags)
-        st.metric("Root Tags", root_tags)
-        st.metric("Child Tags", child_tags)
+        st.metric("Total Tags", stats['total_tags'])
+        st.metric("Root Tags", stats['root_tags'])
+        st.metric("Child Tags", stats['child_tags'])
     
     with col2:
-        st.metric("Total Paragraphs", total_paragraphs)
-        st.metric("Tagged Paragraphs", tagged_paragraphs)
-        st.metric("Paragraphs with Notes", paragraphs_with_notes)
+        st.metric("Total Paragraphs", stats['total_paragraphs'])
+        st.metric("Tagged Paragraphs", stats['tagged_paragraphs'])
+        st.metric("Paragraphs with Notes", stats['paragraphs_with_notes'])
     
     with col3:
-        st.metric("Total Keywords", total_keywords)
-        st.metric("Used Keywords", used_keywords)
-        untagged = total_paragraphs - tagged_paragraphs
-        st.metric("Untagged Paragraphs", untagged)
+        st.metric("Total Keywords", stats['total_keywords'])
+        st.metric("Used Keywords", stats['used_keywords'])
+        st.metric("Untagged Paragraphs", stats['untagged_paragraphs'])
     
-    # Top tags by paragraph count
-    cursor.execute("""
-        SELECT t.name, COUNT(pt.paragraph_id) as count
-        FROM tags t
-        LEFT JOIN paragraph_tags pt ON t.id = pt.tag_id
-        GROUP BY t.id, t.name
-        ORDER BY count DESC
-        LIMIT 10
-    """)
-    
-    top_tags = cursor.fetchall()
+    # Top tags by paragraph count using abstract method
+    top_tags = db.get_top_tags_by_usage(10)
     
     if top_tags:
         st.markdown("### 🏷️ Top Tags by Paragraph Count")
-        for i, (tag_name, count) in enumerate(top_tags, 1):
-            st.write(f"{i}. **{tag_name}**: {count} paragraphs")
-    
-    conn.close()
+        for i, tag in enumerate(top_tags, 1):
+            st.write(f"{i}. **{tag['name']}**: {tag['usage_count']} paragraphs")
 
 
 def _show_database_info(db):
     """Show general database information."""
     st.markdown("### 🗄️ Database Information")
     
+    # Get database info using abstract method
+    db_info = db.get_database_info()
+    
     # Database file info
-    if os.path.exists(db.db_path):
-        file_size = os.path.getsize(db.db_path)
-        file_modified = datetime.fromtimestamp(os.path.getmtime(db.db_path))
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"**Database Path:** {db.db_path}")
-            st.write(f"**File Size:** {file_size:,} bytes")
-        
-        with col2:
-            st.write(f"**Last Modified:** {file_modified.strftime('%Y-%m-%d %H:%M:%S')}")
-            st.write(f"**Data Path:** {db.data_path}")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"**Database Path:** {db_info['db_path']}")
+        if 'file_size' in db_info:
+            st.write(f"**File Size:** {db_info['file_size']:,} bytes")
+    
+    with col2:
+        if 'last_modified' in db_info:
+            st.write(f"**Last Modified:** {db_info['last_modified'].strftime('%Y-%m-%d %H:%M:%S')}")
+        st.write(f"**Data Path:** {db_info['data_path']}")
     
     # Schema info
-    import sqlite3
-    conn = sqlite3.connect(db.db_path)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    tables = cursor.fetchall()
-    
     st.markdown("**Database Tables:**")
-    for table in tables:
-        cursor.execute(f"SELECT COUNT(*) FROM {table[0]}")
-        count = cursor.fetchone()[0]
-        st.write(f"• {table[0]}: {count:,} records")
-    
-    conn.close()
+    for table_name, count in db_info['tables'].items():
+        st.write(f"• {table_name}: {count:,} records")

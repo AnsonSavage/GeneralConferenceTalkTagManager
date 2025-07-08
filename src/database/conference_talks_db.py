@@ -1,16 +1,31 @@
+"""
+SQLite implementation of the conference talks database.
+"""
 import sqlite3
 import json
 import os
 import re
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 
-class ConferenceTalksDB:
-    def __init__(self, db_path: str = "conference_talks.db", data_path: str = "data/General_Conference_Talks"):
-        self.db_path = db_path
-        self.data_path = data_path
-        self.init_database()
+from .base_database import BaseDatabaseInterface
+
+
+class SQLiteConferenceTalksDB(BaseDatabaseInterface):
+    """SQLite implementation of the conference talks database."""
     
+    def __init__(self, connection_params: Dict[str, Any]):
+        """
+        Initialize the SQLite database connection.
+        
+        Args:
+            connection_params: Should contain 'db_path' and 'data_path' keys
+        """
+        super().__init__(connection_params)
+        self.db_path = connection_params.get('db_path', 'conference_talks.db')
+        self.data_path = connection_params.get('data_path', 'data/General_Conference_Talks')
+        self.init_database()
+
     def init_database(self):
         """Initialize the database with tables"""
         conn = sqlite3.connect(self.db_path)
@@ -1097,3 +1112,240 @@ class ConferenceTalksDB:
         # Process children recursively
         for child_tag in sorted(tag_info['children'], key=lambda x: x['name']):
             self._export_tag_hierarchy(child_tag, markdown_content, cursor, tags_dict, level + 1)
+    
+    # Database-specific query methods (to replace direct SQL calls)
+    def get_paragraph_count_for_tag(self, tag_id: int) -> int:
+        """Get the number of paragraphs assigned to a specific tag."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM paragraph_tags WHERE tag_id = ?", (tag_id,))
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+    
+    def remove_tag_from_all_paragraphs(self, tag_id: int) -> int:
+        """Remove a tag from all paragraphs and return the number of paragraphs affected."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # First get the count
+        cursor.execute("SELECT COUNT(*) FROM paragraph_tags WHERE tag_id = ?", (tag_id,))
+        count = cursor.fetchone()[0]
+        
+        # Then remove the associations
+        cursor.execute("DELETE FROM paragraph_tags WHERE tag_id = ?", (tag_id,))
+        conn.commit()
+        conn.close()
+        return count
+    
+    def get_talks_with_paragraph_counts(self) -> List[Dict]:
+        """Get all talks with their paragraph counts."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT t.id, t.title, t.speaker, t.conference_date, t.session, t.hyperlink,
+                   COUNT(p.id) as total_paragraphs
+            FROM talks t
+            LEFT JOIN paragraphs p ON t.id = p.talk_id
+            GROUP BY t.id, t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+            ORDER BY t.conference_date DESC, t.title
+        """)
+        
+        rows = cursor.fetchall()
+        talks = []
+        for row in rows:
+            talks.append({
+                'id': row[0],
+                'title': row[1],
+                'speaker': row[2],
+                'conference_date': row[3],
+                'session': row[4],
+                'hyperlink': row[5],
+                'total_paragraphs': row[6]
+            })
+        
+        conn.close()
+        return talks
+    
+    def get_untagged_paragraphs_summary(self) -> Dict[str, Any]:
+        """Get summary statistics for untagged paragraphs."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get total untagged paragraphs count
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM paragraphs p 
+            LEFT JOIN paragraph_tags pt ON p.id = pt.paragraph_id 
+            WHERE pt.paragraph_id IS NULL
+        """)
+        untagged_count = cursor.fetchone()[0]
+        
+        # Get total paragraphs count
+        cursor.execute("SELECT COUNT(*) FROM paragraphs")
+        total_count = cursor.fetchone()[0]
+        
+        conn.close()
+        return {
+            'untagged_count': untagged_count,
+            'total_count': total_count,
+            'tagged_count': total_count - untagged_count,
+            'untagged_percentage': (untagged_count / total_count * 100) if total_count > 0 else 0
+        }
+    
+    def get_tag_usage_statistics(self) -> List[Dict]:
+        """Get usage statistics for all tags."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT t.id, t.name, t.description, t.parent_tag_id,
+                   COUNT(pt.paragraph_id) as usage_count
+            FROM tags t
+            LEFT JOIN paragraph_tags pt ON t.id = pt.tag_id
+            GROUP BY t.id, t.name, t.description, t.parent_tag_id
+            ORDER BY usage_count DESC, t.name
+        """)
+        
+        rows = cursor.fetchall()
+        statistics = []
+        for row in rows:
+            statistics.append({
+                'id': row[0],
+                'name': row[1],
+                'description': row[2],
+                'parent_tag_id': row[3],
+                'usage_count': row[4]
+            })
+        
+        conn.close()
+        return statistics
+    
+    def get_keyword_usage_statistics(self) -> List[Dict]:
+        """Get usage statistics for all keywords."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT k.keyword, COUNT(DISTINCT pk.paragraph_id) as usage_count
+            FROM keywords k
+            LEFT JOIN paragraph_keywords pk ON k.id = pk.keyword_id
+            GROUP BY k.keyword
+            ORDER BY usage_count DESC, k.keyword
+        """)
+        
+        rows = cursor.fetchall()
+        statistics = []
+        for row in rows:
+            statistics.append({
+                'keyword': row[0],
+                'usage_count': row[1]
+            })
+        
+        conn.close()
+        return statistics
+    
+    def get_export_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive statistics for export preview."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Tag statistics
+        cursor.execute("SELECT COUNT(*) FROM tags")
+        total_tags = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM tags WHERE parent_tag_id IS NULL")
+        root_tags = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM tags WHERE parent_tag_id IS NOT NULL")
+        child_tags = cursor.fetchone()[0]
+        
+        # Paragraph statistics
+        cursor.execute("SELECT COUNT(*) FROM paragraphs")
+        total_paragraphs = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(DISTINCT paragraph_id) FROM paragraph_tags")
+        tagged_paragraphs = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM paragraphs WHERE notes IS NOT NULL AND notes != ''")
+        paragraphs_with_notes = cursor.fetchone()[0]
+        
+        # Keyword statistics
+        cursor.execute("SELECT COUNT(*) FROM keywords")
+        total_keywords = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(DISTINCT keyword_id) FROM paragraph_keywords")
+        used_keywords = cursor.fetchone()[0]
+        
+        conn.close()
+        return {
+            'total_tags': total_tags,
+            'root_tags': root_tags,
+            'child_tags': child_tags,
+            'total_paragraphs': total_paragraphs,
+            'tagged_paragraphs': tagged_paragraphs,
+            'untagged_paragraphs': total_paragraphs - tagged_paragraphs,
+            'paragraphs_with_notes': paragraphs_with_notes,
+            'total_keywords': total_keywords,
+            'used_keywords': used_keywords
+        }
+    
+    def get_database_info(self) -> Dict[str, Any]:
+        """Get database metadata and table information."""
+        import os
+        from datetime import datetime
+        
+        info = {
+            'db_path': self.db_path,
+            'data_path': self.data_path,
+            'tables': {}
+        }
+        
+        # File information
+        if os.path.exists(self.db_path):
+            info['file_size'] = os.path.getsize(self.db_path)
+            info['last_modified'] = datetime.fromtimestamp(os.path.getmtime(self.db_path))
+        
+        # Table information
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = cursor.fetchall()
+        
+        for table in tables:
+            table_name = table[0]
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+            count = cursor.fetchone()[0]
+            info['tables'][table_name] = count
+        
+        conn.close()
+        return info
+    
+    def get_top_tags_by_usage(self, limit: int = 10) -> List[Dict]:
+        """Get top tags by paragraph count."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT t.id, t.name, t.description, COUNT(pt.paragraph_id) as usage_count
+            FROM tags t
+            LEFT JOIN paragraph_tags pt ON t.id = pt.tag_id
+            GROUP BY t.id, t.name, t.description
+            ORDER BY usage_count DESC, t.name
+            LIMIT ?
+        """, (limit,))
+        
+        rows = cursor.fetchall()
+        top_tags = []
+        for row in rows:
+            top_tags.append({
+                'id': row[0],
+                'name': row[1],
+                'description': row[2],
+                'usage_count': row[3]
+            })
+        
+        conn.close()
+        return top_tags

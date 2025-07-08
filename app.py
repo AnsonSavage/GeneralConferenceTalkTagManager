@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent / "src"))
 
 from src.config.settings import APP_TITLE, APP_ICON, DEFAULT_LAYOUT, NAVIGATION_PAGES, SIDEBAR_TIPS
-from src.database import ConferenceTalksDB
+from src.database import get_database
 from src.pages.search_and_tag import render_search_and_tag_page
 from src.pages.add_tags_to_paragraphs import render_add_tags_page
 from src.pages.manage_paragraphs import render_manage_paragraphs_page
@@ -82,8 +82,8 @@ def render_database_selector():
                     st.error(f"Database '{new_db_name}' already exists!")
                 else:
                     try:
-                        # Create new database
-                        new_db = ConferenceTalksDB(db_path=new_db_name)
+                        # Create new database using factory
+                        new_db = get_database(db_path=new_db_name)
                         st.session_state.selected_database = new_db_name
                         # Clear cached database
                         if 'database_instance' in st.session_state:
@@ -115,7 +115,7 @@ def render_database_selector():
 @st.cache_resource
 def get_database_instance(db_path: str):
     """Get database instance for the selected database file."""
-    return ConferenceTalksDB(db_path=db_path)
+    return get_database(db_path=db_path)
 
 
 def main():
