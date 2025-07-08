@@ -68,14 +68,24 @@ def _render_list_view(paragraphs, db, filters):
     """Render paragraphs in a list view for quick scanning and editing."""
     st.subheader("📋 Paragraph List")
     
-    # Pagination
-    items_per_page = st.selectbox("Items per page:", [10, 25, 50, 100], index=1)
-    total_pages = (len(paragraphs) - 1) // items_per_page + 1
-    current_page = st.number_input("Page:", min_value=1, max_value=total_pages, value=1)
+    # Pagination with "Show All" option
+    items_per_page_options = [10, 25, 50, 100, "Show All"]
+    items_per_page = st.selectbox("Items per page:", items_per_page_options, index=1)
     
-    start_idx = (current_page - 1) * items_per_page
-    end_idx = min(start_idx + items_per_page, len(paragraphs))
-    page_paragraphs = paragraphs[start_idx:end_idx]
+    if items_per_page == "Show All":
+        # Show all items without pagination
+        page_paragraphs = paragraphs
+        st.info(f"Showing all {len(paragraphs)} paragraphs")
+    else:
+        # Regular pagination
+        total_pages = (len(paragraphs) - 1) // items_per_page + 1
+        current_page = st.number_input("Page:", min_value=1, max_value=total_pages, value=1)
+        
+        start_idx = (current_page - 1) * items_per_page
+        end_idx = min(start_idx + items_per_page, len(paragraphs))
+        page_paragraphs = paragraphs[start_idx:end_idx]
+        
+        st.info(f"Showing {len(page_paragraphs)} of {len(paragraphs)} paragraphs (Page {current_page} of {total_pages})")
     
     # Display paragraphs
     for i, paragraph in enumerate(page_paragraphs):
