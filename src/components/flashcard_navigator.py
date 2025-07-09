@@ -2,7 +2,7 @@
 Flashcard navigation component for the Conference Talks Analysis application.
 """
 import streamlit as st
-from typing import List, Any
+from typing import List, Any, Optional
 from ..utils.helpers import get_random_index
 
 
@@ -30,6 +30,25 @@ class FlashcardNavigator:
         if not self.items:
             return None
         return self.items[self.get_current_index()]
+    
+    def get_next_unreviewed_index(self, current_index: int) -> Optional[int]:
+        """Find the next unreviewed item index starting from current_index + 1."""
+        # Search forward from current position
+        for i in range(current_index + 1, self.total_items):
+            if not self.items[i].get('reviewed', False):
+                return i
+        
+        # If no unreviewed items found after current position, search from beginning
+        for i in range(0, current_index):
+            if not self.items[i].get('reviewed', False):
+                return i
+        
+        # No unreviewed items found
+        return None
+    
+    def get_reviewed_count(self) -> int:
+        """Get the count of reviewed items."""
+        return sum(1 for item in self.items if item.get('reviewed', False))
     
     def render_navigation(self) -> None:
         """Render the navigation controls."""
@@ -71,24 +90,31 @@ class FlashcardNavigator:
                 st.rerun()
 
     def render_enhanced_navigation(self) -> None:
-        """Render enhanced navigation controls with better styling and keyboard shortcuts."""
+        """Render enhanced navigation controls with progress tracking and review functionality."""
         if not self.items:
             return
             
         current_index = self.get_current_index()
+        reviewed_count = self.get_reviewed_count()
         
-        # Enhanced navigation with progress bar
-        progress = (current_index + 1) / self.total_items
-        st.progress(progress, text=f"Flashcard {current_index + 1} of {self.total_items}")
+        # Progress tracking for reviewed items
+        review_progress = reviewed_count / self.total_items if self.total_items > 0 else 0
         
-        # Navigation buttons with keyboard shortcuts
+        # Display review progress bar
+        st.markdown("**Review Progress:**")
+        st.progress(review_progress, text=f"Reviewed {reviewed_count} of {self.total_items} paragraphs ({review_progress:.1%})")
+        
+        # Current item position
+        st.markdown(f"**Current:** Paragraph {current_index + 1} of {self.total_items}")
+        
+        # Navigation buttons
         col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 1, 2])
         
         with col1:
             if st.button(
                 "⬅️ Previous", 
                 disabled=current_index == 0,
-                help="Previous flashcard (Left Arrow)",
+                help="Previous paragraph (Left Arrow)",
                 key=f"prev_{self.session_key}"
             ):
                 st.session_state[self.session_key] = current_index - 1
@@ -98,37 +124,41 @@ class FlashcardNavigator:
             if st.button(
                 "➡️ Next", 
                 disabled=current_index == self.total_items - 1,
-                help="Next flashcard (Right Arrow)",
+                help="Next paragraph (Right Arrow)",
                 key=f"next_{self.session_key}"
             ):
                 st.session_state[self.session_key] = current_index + 1
                 st.rerun()
         
         with col3:
+            # Next unreviewed button
+            next_unreviewed_idx = self.get_next_unreviewed_index(current_index)
+            if st.button(
+                "⏭️ Next Unreviewed",
+                disabled=next_unreviewed_idx is None,
+                help="Jump to next unreviewed paragraph",
+                key=f"next_unreviewed_{self.session_key}"
+            ):
+                if next_unreviewed_idx is not None:
+                    st.session_state[self.session_key] = next_unreviewed_idx
+                    st.rerun()
+        
+        with col4:
             if st.button(
                 "🔄 Random",
-                help="Random flashcard (R key)",
+                help="Random paragraph (R key)",
                 key=f"random_{self.session_key}"
             ):
                 st.session_state[self.session_key] = get_random_index(self.total_items)
                 st.rerun()
         
-        with col4:
+        with col5:
             if st.button(
-                "⏭️ First",
-                help="Go to first flashcard",
+                "⏮️ First",
+                help="Go to first paragraph",
                 key=f"first_{self.session_key}"
             ):
                 st.session_state[self.session_key] = 0
-                st.rerun()
-        
-        with col5:
-            if st.button(
-                "⏮️ Last",
-                help="Go to last flashcard",
-                key=f"last_{self.session_key}"
-            ):
-                st.session_state[self.session_key] = self.total_items - 1
                 st.rerun()
         
         with col6:
@@ -141,7 +171,7 @@ class FlashcardNavigator:
                     max_value=self.total_items,
                     value=current_index + 1, 
                     key=f"jump_input_enhanced_{self.session_key}",
-                    help="Enter a number to jump to that flashcard"
+                    help="Enter a number to jump to that paragraph"
                 )
             with jump_col2:
                 if st.button("Go", key=f"go_button_enhanced_{self.session_key}"):
@@ -204,3 +234,35 @@ class FlashcardNavigator:
             if st.button("⏭️", key=f"floating_first_{self.session_key}", help="First"):
                 st.session_state[self.session_key] = 0
                 st.rerun()
+    
+    def mark_current_reviewed_and_move_to_next_unreviewed(self, database) -> bool:
+        """
+        Mark current item as reviewed and automatically move to next unreviewed item.
+        
+        Args:
+            database: Database instance to mark the paragraph as reviewed
+            
+        Returns:
+            True if successfully moved to next unreviewed item, False if no more unreviewed items
+        """
+        current_index = self.get_current_index()
+        current_item = self.get_current_item()
+        
+        if current_item and 'id' in current_item:
+            # Mark current paragraph as reviewed
+            database.mark_paragraph_reviewed(current_item['id'], True)
+            
+            # Update the item in our local list
+            self.items[current_index]['reviewed'] = True
+            
+            # Find next unreviewed item
+            next_unreviewed_idx = self.get_next_unreviewed_index(current_index)
+            
+            if next_unreviewed_idx is not None:
+                st.session_state[self.session_key] = next_unreviewed_idx
+                return True
+            else:
+                # No more unreviewed items, stay at current position
+                return False
+        
+        return False

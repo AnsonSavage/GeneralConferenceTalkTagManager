@@ -21,8 +21,7 @@ def render_manage_paragraphs_page(database: BaseDatabaseInterface) -> None:
     paragraphs = database.get_all_paragraphs_with_filters(
         tag_filter=filters['tag_filter'],
         keyword_filter=filters['keyword_filter'],
-        untagged_only=filters['untagged_only'],
-        reviewed_only=filters.get('reviewed_only', False)
+        untagged_only=filters['untagged_only']
     )
     
     if paragraphs:
@@ -157,10 +156,10 @@ def _render_flashcard_view(paragraphs, database: BaseDatabaseInterface, filters)
     
     if current_paragraph:
         st.divider()
-        _render_management_flashcard(current_paragraph, database, filters['keyword_filter'])
+        _render_management_flashcard(current_paragraph, database, navigator, filters['keyword_filter'])
 
 
-def _render_management_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseInterface, keyword_filter: str = None) -> None:
+def _render_management_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseInterface, navigator: FlashcardNavigator, keyword_filter: str = None) -> None:
     """Render a single paragraph as a management flashcard."""
     with st.container():
         # Talk information header
@@ -174,14 +173,35 @@ def _render_management_flashcard(paragraph: Dict[str, Any], database: BaseDataba
                 st.markdown(f"[🔗 View Talk]({paragraph['hyperlink']})")
         
         with col2:
-            # Review status toggle
+            # Review status and actions
             current_status = paragraph.get('reviewed', False)
+            
+            # Mark as reviewed button - moves to next unreviewed
+            if not current_status:
+                if st.button(
+                    "✅ Mark Reviewed & Continue",
+                    type="primary",
+                    key=f"mark_reviewed_continue_{paragraph['id']}",
+                    help="Mark this paragraph as reviewed and move to next unreviewed paragraph"
+                ):
+                    moved_to_next = navigator.mark_current_reviewed_and_move_to_next_unreviewed(database)
+                    if moved_to_next:
+                        st.success("Marked as reviewed! Moving to next unreviewed paragraph.")
+                    else:
+                        st.success("Marked as reviewed! No more unreviewed paragraphs.")
+                    st.rerun()
+            
+            # Toggle review status button
             if st.button(
-                "✅ Reviewed" if current_status else "⏳ Mark Reviewed",
-                type="secondary" if current_status else "primary",
-                key=f"toggle_review_{paragraph['id']}"
+                "🔄 Mark Unreviewed" if current_status else "✅ Mark Reviewed",
+                type="secondary",
+                key=f"toggle_review_{paragraph['id']}",
+                help="Toggle review status without moving to next paragraph"
             ):
                 database.mark_paragraph_reviewed(paragraph['id'], not current_status)
+                # Update the navigator's local data
+                current_index = navigator.get_current_index()
+                navigator.items[current_index]['reviewed'] = not current_status
                 st.rerun()
         
         # Display matched keywords

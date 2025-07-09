@@ -34,7 +34,6 @@ class TagSelector:
                             if st.button(f"➕ {tag['name']}", key=f"add_existing_{tag['id']}_{key_suffix}"):
                                 if self.paragraph_id:
                                     self.db.tag_paragraph_with_hierarchy(self.paragraph_id, tag['id'])
-                                    self.db.update_paragraph_reviewed_status()
                                     st.success(f"Added tag '{tag['name']}' with hierarchy!")
                                     st.rerun()
                                 return tag
@@ -108,7 +107,6 @@ class TagSelector:
                     if selected_tag and st.button("➕ Add Selected Tag", key=f"add_selected_{key_suffix}"):
                         if self.paragraph_id:
                             self.db.tag_paragraph_with_hierarchy(self.paragraph_id, selected_tag['id'])
-                            self.db.update_paragraph_reviewed_status()
                             # Set flag to clear search and suggestions
                             st.session_state[f"clear_search_{key_suffix}"] = True
                             st.success(f"✅ Added '{selected_tag['name']}' with hierarchy!")
@@ -122,7 +120,6 @@ class TagSelector:
                     if st.button(f"➕ {tag['name']}", key=f"add_enhanced_{tag['id']}_{key_suffix}"):
                         if self.paragraph_id:
                             self.db.tag_paragraph_with_hierarchy(self.paragraph_id, tag['id'])
-                            self.db.update_paragraph_reviewed_status()
                             # Set flag to clear search and suggestions
                             st.session_state[f"clear_search_{key_suffix}"] = True
                             st.success(f"✅ Added '{tag['name']}' with hierarchy!")
@@ -169,7 +166,6 @@ class TagSelector:
                         if st.button("➕ Add", key=f"add_root_enhanced_{root_tag['id']}_{key_suffix}"):
                             if self.paragraph_id:
                                 self.db.tag_paragraph_with_hierarchy(self.paragraph_id, root_tag['id'])
-                                self.db.update_paragraph_reviewed_status()
                                 st.success(f"Added '{root_tag['name']}'!")
                                 st.rerun()
                     
@@ -187,7 +183,6 @@ class TagSelector:
                                 if st.button("➕", key=f"add_child_enhanced_{child_tag['id']}_{key_suffix}"):
                                     if self.paragraph_id:
                                         self.db.tag_paragraph_with_hierarchy(self.paragraph_id, child_tag['id'])
-                                        self.db.update_paragraph_reviewed_status()
                                         st.success(f"Added '{child_tag['name']}' with hierarchy!")
                                         st.rerun()
         else:
@@ -223,7 +218,6 @@ class TagSelector:
                     if self.paragraph_id:
                         # Add the new tag to the paragraph
                         self.db.tag_paragraph_with_hierarchy(self.paragraph_id, tag_id)
-                        self.db.update_paragraph_reviewed_status()
                     
                     st.success(f"Created tag '{tag_name}' and added to paragraph!")
                     st.rerun()
@@ -262,7 +256,6 @@ class TagSelector:
                         
                         if self.paragraph_id:
                             self.db.tag_paragraph_with_hierarchy(self.paragraph_id, tag_id)
-                            self.db.update_paragraph_reviewed_status()
                         
                         st.success(f"Created and added tag '{tag_name}'!")
                         del st.session_state[creating_key]
@@ -310,7 +303,6 @@ class TagSelector:
                         if self.paragraph_id:
                             # Add the new tag to the paragraph
                             self.db.tag_paragraph_with_hierarchy(self.paragraph_id, tag_id)
-                            self.db.update_paragraph_reviewed_status()
                         
                         st.success(f"Tag '{st.session_state[creating_key]}' created!")
                         del st.session_state[creating_key]
@@ -342,7 +334,6 @@ class TagSelector:
                         if st.button("➕ Add", key=f"add_root_{root_tag['id']}_{key_suffix}"):
                             if self.paragraph_id:
                                 self.db.tag_paragraph_with_hierarchy(self.paragraph_id, root_tag['id'])
-                                self.db.update_paragraph_reviewed_status()
                                 st.success(f"Added tag '{root_tag['name']}'!")
                                 st.rerun()
                     
@@ -356,7 +347,6 @@ class TagSelector:
                             if st.button("➕ Add", key=f"add_child_{child_tag['id']}_{key_suffix}"):
                                 if self.paragraph_id:
                                     self.db.tag_paragraph_with_hierarchy(self.paragraph_id, child_tag['id'])
-                                    self.db.update_paragraph_reviewed_status()
                                     st.success(f"Added tag '{child_tag['name']}' with hierarchy!")
                                     st.rerun()
             

@@ -90,8 +90,8 @@ class BaseDatabaseInterface(ABC):
         pass
     
     @abstractmethod
-    def update_paragraph_reviewed_status(self) -> None:
-        """Update reviewed status based on whether paragraph has tags."""
+    def mark_all_paragraphs_not_reviewed(self) -> None:
+        """Mark all paragraphs as not reviewed."""
         pass
     
     @abstractmethod

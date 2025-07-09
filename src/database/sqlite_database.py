@@ -4,7 +4,7 @@ SQLite implementation of the conference talks database.
 import sqlite3
 import json
 from datetime import datetime
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, override
 
 from .base_database import BaseDatabaseInterface
 
@@ -23,6 +23,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         self.db_path = connection_params.get('db_path', 'conference_talks.db')
         self.init_database()
 
+    @override
     def init_database(self) -> None:
         """Initialize the database with tables"""
         conn = sqlite3.connect(self.db_path)
@@ -101,6 +102,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
     
+    @override
     def add_talk(self, title: str, speaker: str, conference_date: str, 
                  hyperlink: str, session: str = None) -> int:
         """Add a new talk and return its ID"""
@@ -117,6 +119,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return talk_id
     
+    @override
     def add_or_update_talk(self, talk_data: Dict) -> int:
         """Add a talk to the database or return existing ID"""
         conn = sqlite3.connect(self.db_path)
@@ -144,6 +147,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return talk_id
     
+    @override
     def get_talks_summary(self) -> List[Dict]:
         """Get summary of all talks"""
         conn = sqlite3.connect(self.db_path)
@@ -177,6 +181,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return talks
     
+    @override
     def get_talks_with_paragraph_counts(self) -> List[Dict]:
         """Get all talks with their paragraph counts."""
         conn = sqlite3.connect(self.db_path)
@@ -207,6 +212,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return talks
     
+    @override
     def add_paragraph(self, talk_id: int, paragraph_number: int, 
                      content: str, matched_keywords: List[str] = None) -> int:
         """Add a paragraph to a talk"""
@@ -225,6 +231,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return paragraph_id
     
+    @override
     def add_or_update_paragraph(self, talk_id: int, paragraph_number: int, 
                                content: str, matched_keywords: List[str]) -> int:
         """Add a paragraph or update its keywords if it already exists"""
@@ -263,6 +270,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return paragraph_id
     
+    @override
     def add_tag(self, name: str, description: str = None, parent_tag_id: int = None) -> int:
         """Add a new tag"""
         conn = sqlite3.connect(self.db_path)
@@ -282,6 +290,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             conn.close()
             raise ValueError(f"Tag '{name}' already exists")
     
+    @override
     def tag_paragraph(self, paragraph_id: int, tag_id: int) -> None:
         """Tag a paragraph with a specific tag"""
         conn = sqlite3.connect(self.db_path)
@@ -298,6 +307,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         finally:
             conn.close()
     
+    @override
     def remove_tag_from_paragraph(self, paragraph_id: int, tag_id: int) -> None:
         """Remove a tag from a paragraph"""
         conn = sqlite3.connect(self.db_path)
@@ -311,6 +321,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
     
+    @override
     def search_paragraphs(self, keywords: List[str]) -> List[Dict]:
         """Search for paragraphs containing any of the keywords"""
         conn = sqlite3.connect(self.db_path)
@@ -370,6 +381,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return results
     
+    @override
     def get_paragraph_tags(self, paragraph_id: int) -> List[Dict]:
         """Get all tags for a paragraph"""
         conn = sqlite3.connect(self.db_path)
@@ -390,6 +402,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return tags
     
+    @override
     def get_all_tags(self) -> List[Dict]:
         """Get all tags with their hierarchy"""
         conn = sqlite3.connect(self.db_path)
@@ -408,6 +421,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return tags
     
+    @override
     def mark_paragraph_reviewed(self, paragraph_id: int, reviewed: bool = True) -> None:
         """Mark a paragraph as reviewed"""
         conn = sqlite3.connect(self.db_path)
@@ -424,6 +438,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
     
+    @override
     def mark_all_paragraphs_not_reviewed(self) -> None:
         """Mark all paragraphs as not reviewed."""
         conn = sqlite3.connect(self.db_path)
@@ -434,6 +449,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
 
+    @override
     def delete_tag(self, tag_id: int) -> None:
         """Delete a tag and update its children to have no parent"""
         conn = sqlite3.connect(self.db_path)
@@ -448,6 +464,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
     
+    @override
     def search_tags(self, query: str) -> List[Dict]:
         """Search for tags by name"""
         conn = sqlite3.connect(self.db_path)
@@ -467,32 +484,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return tags
     
-    def update_paragraph_reviewed_status(self) -> None:
-        """Update reviewed status based on whether paragraph has tags"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Mark paragraphs with tags as reviewed
-        cursor.execute("""
-            UPDATE paragraphs 
-            SET reviewed = 1, review_date = CURRENT_TIMESTAMP
-            WHERE id IN (
-                SELECT DISTINCT paragraph_id FROM paragraph_tags
-            ) AND reviewed = 0
-        """)
-        
-        # Mark paragraphs without tags as not reviewed
-        cursor.execute("""
-            UPDATE paragraphs 
-            SET reviewed = 0, review_date = NULL
-            WHERE id NOT IN (
-                SELECT DISTINCT paragraph_id FROM paragraph_tags
-            ) AND reviewed = 1
-        """)
-        
-        conn.commit()
-        conn.close()
-    
+    @override
     def export_to_markdown(self, output_file: str = None) -> str:
         """Export database content to markdown format organized by tag hierarchy"""
         conn = sqlite3.connect(self.db_path)
@@ -657,6 +649,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             self._export_tag_hierarchy(child_tag, markdown_content, cursor, tags_dict, level + 1)
     
     # Database-specific query methods (to replace direct SQL calls)
+    @override
     def get_paragraph_count_for_tag(self, tag_id: int) -> int:
         """Get the number of paragraphs assigned to a specific tag."""
         conn = sqlite3.connect(self.db_path)
@@ -666,6 +659,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return count
     
+    @override
     def remove_tag_from_all_paragraphs(self, tag_id: int) -> int:
         """Remove a tag from all paragraphs and return the number of paragraphs affected."""
         conn = sqlite3.connect(self.db_path)
@@ -681,6 +675,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return count
     
+    @override
     def get_export_statistics(self) -> Dict[str, Any]:
         """Get comprehensive statistics for export preview."""
         conn = sqlite3.connect(self.db_path)
@@ -726,6 +721,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             'used_keywords': used_keywords
         }
     
+    @override
     def get_database_info(self) -> Dict[str, Any]:
         """Get database metadata and table information."""
         import os
@@ -757,6 +753,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return info
     
+    @override
     def get_top_tags_by_usage(self, limit: int = 10) -> List[Dict]:
         """Get top tags by paragraph count."""
         conn = sqlite3.connect(self.db_path)
@@ -784,8 +781,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return top_tags
     
-    def get_all_paragraphs_with_filters(self, tag_filter: str = None, keyword_filter: str = None, 
-                                       untagged_only: bool = False, reviewed_only: bool = False) -> List[Dict]:
+    @override
+    def get_all_paragraphs_with_filters(self, tag_filter: str = None, keyword_filter: str = None, untagged_only: bool = False, reviewed_only: bool = False) -> List[Dict]:
         """Get paragraphs with optional filtering."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -848,6 +845,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return results
     
+    @override
     def get_paragraphs_by_tag(self, tag_id: int) -> List[Dict]:
         """Get all paragraphs that have a specific tag."""
         conn = sqlite3.connect(self.db_path)
@@ -888,6 +886,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return results
     
+    @override
     def get_paragraph_tags_with_hierarchy(self, paragraph_id: int) -> Dict:
         """Get all tags for a paragraph, separating explicit and implicit tags."""
         conn = sqlite3.connect(self.db_path)
@@ -946,14 +945,15 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             'implicit_tags': implicit_tags
         }
     
+    @override
     def tag_paragraph_with_hierarchy(self, paragraph_id: int, tag_id: int) -> None:
         """Tag a paragraph and all its parent tags."""
         hierarchy = self.get_tag_hierarchy(tag_id)
         for tag in hierarchy:
             self.tag_paragraph(paragraph_id, tag)
     
-    def update_tag(self, tag_id: int, name: str = None, description: str = None, 
-                   parent_tag_id: int = None) -> None:
+    @override
+    def update_tag(self, tag_id: int, name: str = None, description: str = None, parent_tag_id: int = None) -> None:
         """Update a tag's properties."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -981,6 +981,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         
         conn.close()
     
+    @override
     def get_tag_hierarchy(self, tag_id: int) -> List[int]:
         """Get all parent tags for a given tag (including the tag itself)."""
         conn = sqlite3.connect(self.db_path)
@@ -998,6 +999,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return hierarchy
     
+    @override
     def update_paragraph_notes(self, paragraph_id: int, notes: str) -> None:
         """Update notes for a paragraph."""
         conn = sqlite3.connect(self.db_path)
@@ -1012,6 +1014,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
     
+    @override
     def get_paragraph_with_notes(self, paragraph_id: int) -> Optional[Dict]:
         """Get a paragraph with its notes."""
         conn = sqlite3.connect(self.db_path)
@@ -1052,6 +1055,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return result
     
+    @override
     def get_untagged_paragraphs_summary(self) -> Dict[str, Any]:
         """Get summary statistics for untagged paragraphs."""
         conn = sqlite3.connect(self.db_path)
@@ -1081,6 +1085,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             'untagged_percentage': (untagged_count / total_paragraphs * 100) if total_paragraphs > 0 else 0
         }
     
+    @override
     def get_tag_usage_statistics(self) -> List[Dict]:
         """Get usage statistics for all tags."""
         conn = sqlite3.connect(self.db_path)
@@ -1109,6 +1114,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return stats
     
+    @override
     def add_keywords(self, keywords: List[str]) -> None:
         """Add keywords to the keywords table."""
         conn = sqlite3.connect(self.db_path)
@@ -1123,6 +1129,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
     
+    @override
     def get_keywords(self) -> List[str]:
         """Get all keywords."""
         conn = sqlite3.connect(self.db_path)
@@ -1134,6 +1141,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return keywords
     
+    @override
     def delete_keyword(self, keyword: str) -> None:
         """Delete a keyword and all its associations."""
         conn = sqlite3.connect(self.db_path)
@@ -1145,6 +1153,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
     
+    @override
     def get_paragraphs_by_keyword(self, keyword: str) -> List[Dict]:
         """Get all paragraphs that match a specific keyword."""
         conn = sqlite3.connect(self.db_path)
@@ -1186,6 +1195,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
         return results
     
+    @override
     def add_paragraph_keyword_associations(self, paragraph_id: int, keywords: List[str]) -> None:
         """Add keyword associations for a paragraph."""
         conn = sqlite3.connect(self.db_path)
@@ -1208,6 +1218,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
     
+    @override
     def get_keyword_usage_statistics(self) -> List[Dict]:
         """Get usage statistics for all keywords."""
         conn = sqlite3.connect(self.db_path)

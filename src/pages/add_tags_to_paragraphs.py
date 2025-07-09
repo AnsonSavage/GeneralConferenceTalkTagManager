@@ -108,7 +108,6 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
             if st.session_state.get(last_processed_key) != selected_tag_name:
                 selected_tag_id = tag_options[selected_tag_name]
                 database.tag_paragraph_with_hierarchy(paragraph_id, selected_tag_id)
-                database.update_paragraph_reviewed_status()
                 st.success(f"✅ Added '{selected_tag_name}'!")
                 
                 # Mark this tag as processed for this paragraph
@@ -138,7 +137,6 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
                         parent_id = parent_options.get(parent_tag) if parent_tag and all_tags else None
                         tag_id = database.add_tag(new_tag_name, new_tag_description, parent_id)
                         database.tag_paragraph_with_hierarchy(paragraph_id, tag_id)
-                        database.update_paragraph_reviewed_status()
                         st.success(f"✅ Created and added '{new_tag_name}'!")
                         st.rerun()
                     except ValueError as e:
@@ -180,7 +178,6 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
                 with col2:
                     if st.button("➕", key=f"hier_add_{tag['id']}", help=f"Add {tag['name']}"):
                         database.tag_paragraph_with_hierarchy(paragraph_id, tag['id'])
-                        database.update_paragraph_reviewed_status()
                         st.success(f"✅ Added '{tag['name']}'!")
                         st.rerun()
                 

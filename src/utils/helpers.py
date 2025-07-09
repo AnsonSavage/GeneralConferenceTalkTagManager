@@ -163,7 +163,6 @@ def display_hierarchical_tags(paragraph_id: int, db: BaseDatabaseInterface) -> N
                 with cols[i]:
                     if st.button(f"❌ {tag['name']}", key=f"remove_explicit_{paragraph_id}_{tag['id']}"):
                         db.remove_tag_from_paragraph(paragraph_id, tag['id'])
-                        db.update_paragraph_reviewed_status()
                         st.rerun()
         
         # Display implicit tags (grayed out)
@@ -486,7 +485,6 @@ def _render_tag_tree(tag_tree: List[Dict], paragraph_id: int, db: BaseDatabaseIn
                 if st.button("❌", key=f"remove_tree_{paragraph_id}_{tag_node['id']}", 
                            help=f"Remove {tag_node['name']}"):
                     db.remove_tag_from_paragraph(paragraph_id, tag_node['id'])
-                    db.update_paragraph_reviewed_status()
                     st.rerun()
         else:
             # Implicit tag - grayed out
@@ -549,9 +547,7 @@ def display_compact_tag_list(tags: List[Dict], removable: bool = True,
                     if st.button("❌", key=f"remove_compact_{paragraph_id}_{tag['id']}", 
                                help=f"Remove {tag['name']}"):
                          db.remove_tag_from_paragraph(paragraph_id, tag['id'])
-                         if hasattr(db, 'update_paragraph_reviewed_status'):
-                             db.update_paragraph_reviewed_status()
-                             st.rerun()
+                         st.rerun()
 
 
 def display_tag_hierarchy_for_selection(db: BaseDatabaseInterface, exclude_tag_ids: List[int] = None) -> Dict:
@@ -717,6 +713,4 @@ def display_compact_tag_list(tags: List[Dict], removable: bool = True, paragraph
                     if st.button(f"❌", key=f"remove_compact_{paragraph_id}_{tag['id']}", 
                                help=f"Remove {tag['name']}"):
                         db.remove_tag_from_paragraph(paragraph_id, tag['id'])
-                        if hasattr(db, 'update_paragraph_reviewed_status'):
-                            db.update_paragraph_reviewed_status()
                         st.rerun()
