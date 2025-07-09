@@ -152,24 +152,24 @@ def display_hierarchical_tags(paragraph_id: int, db: BaseDatabaseInterface) -> N
     """
     tag_data = db.get_paragraph_tags_with_hierarchy(paragraph_id)
     
-    if tag_data['explicit'] or tag_data['implicit']:
+    if tag_data['explicit_tags'] or tag_data['implicit_tags']:
         st.markdown("**Current Tags:**")
         
         # Display explicit tags (removable)
-        if tag_data['explicit']:
-            st.markdown("*Explicit tags:*")
-            cols = st.columns(len(tag_data['explicit']))
-            for i, tag in enumerate(tag_data['explicit']):
+        if tag_data['explicit_tags']:
+            st.markdown("*Directly assigned tags:*")
+            cols = st.columns(len(tag_data['explicit_tags']))
+            for i, tag in enumerate(tag_data['explicit_tags']):
                 with cols[i]:
                     if st.button(f"❌ {tag['name']}", key=f"remove_explicit_{paragraph_id}_{tag['id']}"):
                         db.remove_tag_from_paragraph(paragraph_id, tag['id'])
                         st.rerun()
         
         # Display implicit tags (grayed out)
-        if tag_data['implicit']:
-            st.markdown("*Implicit tags (from parent hierarchy):*")
-            cols = st.columns(len(tag_data['implicit']))
-            for i, tag in enumerate(tag_data['implicit']):
+        if tag_data['implicit_tags']:
+            st.markdown("*Inherited tags (from parent hierarchy):*")
+            cols = st.columns(len(tag_data['implicit_tags']))
+            for i, tag in enumerate(tag_data['implicit_tags']):
                 with cols[i]:
                     st.markdown(f"🔗 :gray[{tag['name']}]")
     else:
@@ -376,123 +376,28 @@ def display_hierarchical_tags_with_indentation(paragraph_id: int, db: BaseDataba
     """
     tag_data = db.get_paragraph_tags_with_hierarchy(paragraph_id)
     
-    if tag_data['explicit'] or tag_data['implicit']:
+    if tag_data['explicit_tags'] or tag_data['implicit_tags']:
         st.markdown("**Current Tags:**")
         
-        # Get all tags for this paragraph to build hierarchy
-        all_tags = db.get_paragraph_tags(paragraph_id)
+        # Display explicit tags (removable)
+        if tag_data['explicit_tags']:
+            st.markdown("*Directly assigned tags:*")
+            cols = st.columns(len(tag_data['explicit_tags']))
+            for i, tag in enumerate(tag_data['explicit_tags']):
+                with cols[i]:
+                    if st.button(f"❌ {tag['name']}", key=f"remove_explicit_{paragraph_id}_{tag['id']}"):
+                        db.remove_tag_from_paragraph(paragraph_id, tag['id'])
+                        st.rerun()
         
-        # Build a hierarchy tree
-        tag_tree = _build_tag_tree(all_tags, db)
-        
-        if tag_tree:
-            _render_tag_tree(tag_tree, paragraph_id, db, level=0)
+        # Display implicit tags (grayed out)
+        if tag_data['implicit_tags']:
+            st.markdown("*Inherited tags (from parent hierarchy):*")
+            cols = st.columns(len(tag_data['implicit_tags']))
+            for i, tag in enumerate(tag_data['implicit_tags']):
+                with cols[i]:
+                    st.markdown(f"🔗 :gray[{tag['name']}]")
     else:
         st.info("No tags assigned to this paragraph yet.")
-
-
-def _build_tag_tree(paragraph_tags: List[Dict], db: BaseDatabaseInterface) -> List[Dict]:
-    """
-    Build a hierarchical tree structure from paragraph tags.
-    
-    Args:
-        paragraph_tags: List of tag dictionaries for the paragraph
-        db: Database instance
-        
-    Returns:
-        List of root tags with children nested
-    """
-    # Get all tags to understand the full hierarchy
-    all_tags = {tag['id']: tag for tag in db.get_all_tags()}
-    paragraph_tag_ids = {tag['id'] for tag in paragraph_tags}
-    
-    # Create tag nodes with children arrays
-    tag_nodes = {}
-    for tag in paragraph_tags:
-        tag_nodes[tag['id']] = {
-            'id': tag['id'],
-            'name': tag['name'],
-            'description': tag['description'],
-            'parent_tag_id': tag['parent_tag_id'],
-            'children': []
-        }
-    
-    # Determine which tags are explicit (leaf nodes in this paragraph's context)
-    # A tag is explicit if no child tags are also assigned to this paragraph
-    for tag_id in paragraph_tag_ids:
-        is_explicit = True
-        # Check if any children of this tag are also in the paragraph's tags
-        for other_tag_id in paragraph_tag_ids:
-            if other_tag_id != tag_id:
-                other_tag = all_tags.get(other_tag_id, {})
-                if other_tag.get('parent_tag_id') == tag_id:
-                    is_explicit = False
-                    break
-        
-        tag_nodes[tag_id]['is_explicit'] = is_explicit
-    
-    # Build parent-child relationships
-    root_tags = []
-    for tag in paragraph_tags:
-        tag_id = tag['id']
-        parent_id = tag['parent_tag_id']
-        
-        if parent_id is None or parent_id not in paragraph_tag_ids:
-            # This is a root tag (no parent or parent not in paragraph tags)
-            root_tags.append(tag_nodes[tag_id])
-        elif parent_id in tag_nodes:
-            # Add as child to parent
-            tag_nodes[parent_id]['children'].append(tag_nodes[tag_id])
-    
-    return root_tags
-
-
-def _render_tag_tree(tag_tree: List[Dict], paragraph_id: int, db: BaseDatabaseInterface, level: int = 0):
-    """
-    Render the tag tree with proper indentation and styling.
-    
-    Args:
-        tag_tree: List of tag nodes with children
-        paragraph_id: ID of the paragraph
-        db: Database instance
-        level: Current nesting level
-    """
-    for i, tag_node in enumerate(tag_tree):
-        is_last = (i == len(tag_tree) - 1)
-        
-        # Create indentation using Unicode box drawing characters
-        if level == 0:
-            prefix = ""
-        else:
-            # Build the prefix based on level and position
-            prefix_parts = []
-            for l in range(level):
-                if l == level - 1:
-                    # Last level - use appropriate connector
-                    prefix_parts.append("└─ " if is_last else "├─ ")
-                else:
-                    # Middle levels - use vertical line or space
-                    prefix_parts.append("│  ")
-            prefix = "".join(prefix_parts)
-        
-        # Different styling for explicit vs implicit tags
-        if tag_node['is_explicit']:
-            # Explicit tag - removable
-            col1, col2 = st.columns([6, 1])
-            with col1:
-                st.markdown(f"{prefix}🏷️ **{tag_node['name']}**")
-            with col2:
-                if st.button("❌", key=f"remove_tree_{paragraph_id}_{tag_node['id']}", 
-                           help=f"Remove {tag_node['name']}"):
-                    db.remove_tag_from_paragraph(paragraph_id, tag_node['id'])
-                    st.rerun()
-        else:
-            # Implicit tag - grayed out
-            st.markdown(f"{prefix}🔗 :gray[{tag_node['name']}] *(inherited)*")
-        
-        # Render children recursively
-        if tag_node['children']:
-            _render_tag_tree(tag_node['children'], paragraph_id, db, level + 1)
 
 
 def display_compact_tag_list(tags: List[Dict], removable: bool = True, 

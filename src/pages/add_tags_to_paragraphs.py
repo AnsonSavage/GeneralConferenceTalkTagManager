@@ -24,7 +24,7 @@ def render_add_tags_page(database: BaseDatabaseInterface) -> None:
         current_paragraph = navigator.get_current_item()
         
         if current_paragraph:
-            _render_tagging_flashcard(current_paragraph, database: BaseDatabaseInterface, navigator)
+            _render_tagging_flashcard(current_paragraph, database, navigator)
             
             # Floating navigation at bottom
             navigator.render_floating_navigation()

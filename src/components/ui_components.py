@@ -6,7 +6,7 @@ from their individual files.
 """
 
 # Import all components from their separate files
-from flashcard_navigator import FlashcardNavigator
+from .flashcard_navigator import FlashcardNavigator
 from .tag_selector import TagSelector
 from .filter_controls import FilterControls
 
