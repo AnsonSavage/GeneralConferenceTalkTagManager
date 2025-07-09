@@ -1,6 +1,6 @@
 """
 Main application file for the Conference Talks Analysis application.
-Modular structure with separate pages and components.
+Modular structure with separate pages and components using direct dependency injection.
 """
 import streamlit as st
 import sys
@@ -11,7 +11,11 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent / "src"))
 
 from src.config.settings import APP_TITLE, APP_ICON, DEFAULT_LAYOUT, NAVIGATION_PAGES, SIDEBAR_TIPS
-from src.database import get_database
+from src.database.database_factory import DatabaseFactory
+from src.utils.file_parser import FileParser
+from src.utils.text_processor import TextProcessor
+from src.utils.search_manager import SearchManager
+from src.utils.export_manager import ExportManager
 from src.pages.search_and_tag import render_search_and_tag_page
 from src.pages.add_tags_to_paragraphs import render_add_tags_page
 from src.pages.manage_paragraphs import render_manage_paragraphs_page
@@ -55,9 +59,9 @@ def render_database_selector():
         # Update session state if selection changed
         if selected_db != st.session_state.selected_database:
             st.session_state.selected_database = selected_db
-            # Clear the cached database when switching
-            if 'database_instance' in st.session_state:
-                del st.session_state['database_instance']
+            # Clear the cached components when switching
+            if 'components' in st.session_state:
+                del st.session_state['components']
             st.rerun()
     else:
         st.sidebar.info("No database files found.")
@@ -82,12 +86,12 @@ def render_database_selector():
                     st.error(f"Database '{new_db_name}' already exists!")
                 else:
                     try:
-                        # Create new database using factory
-                        new_db = get_database(db_path=new_db_name)
+                        # Create new database (this initializes the database file)
+                        DatabaseFactory.create_database('sqlite', {'db_path': new_db_name})
                         st.session_state.selected_database = new_db_name
-                        # Clear cached database
-                        if 'database_instance' in st.session_state:
-                            del st.session_state['database_instance']
+                        # Clear cached components
+                        if 'components' in st.session_state:
+                            del st.session_state['components']
                         st.success(f"✅ Created database '{new_db_name}'!")
                         st.rerun()
                     except Exception as e:
@@ -111,11 +115,25 @@ def render_database_selector():
         st.sidebar.caption(f"Size: {size_str}")
 
 
-# Initialize database with selected file
 @st.cache_resource
-def get_database_instance(db_path: str):
-    """Get database instance for the selected database file."""
-    return get_database(db_path=db_path)
+def get_components(db_path: str, data_path: str = "data/General_Conference_Talks"):
+    """Initialize and cache component instances for the selected database file."""
+    # Initialize database
+    database = DatabaseFactory.create_database('sqlite', {'db_path': db_path})
+    
+    # Initialize helper classes
+    file_parser = FileParser(data_path)
+    text_processor = TextProcessor()
+    search_manager = SearchManager(database, data_path)
+    export_manager = ExportManager(database)
+    
+    return {
+        'database': database,
+        'file_parser': file_parser,
+        'text_processor': text_processor,
+        'search_manager': search_manager,
+        'export_manager': export_manager
+    }
 
 
 def main():
@@ -132,32 +150,32 @@ def main():
     # Render database selector
     render_database_selector()
     
-    # Get database instance for selected file
+    # Get component instances for selected file
     selected_db = st.session_state.selected_database
-    db = get_database_instance(selected_db)
+    components = get_components(selected_db)
     
     # Sidebar navigation
     st.sidebar.markdown("---")
     st.sidebar.title("Navigation")
     page = st.sidebar.radio("Go to", NAVIGATION_PAGES)
     
-    # Route to appropriate page
+    # Route to appropriate page with only needed components
     if page == "🔍 Search & Tag":
-        render_search_and_tag_page(db)
+        render_search_and_tag_page(components['database'], components['search_manager'])
     elif page == "📝 Add Tags to Paragraphs":
-        render_add_tags_page(db)
+        render_add_tags_page(components['database'])
     elif page == "📄 Manage Paragraphs":
-        render_manage_paragraphs_page(db)
+        render_manage_paragraphs_page(components['database'])
     elif page == "📚 Manage Talks":
-        render_manage_talks_page(db)
+        render_manage_talks_page(components['database'])
     elif page == "🏷️ Manage Tags":
-        render_manage_tags_page(db)
+        render_manage_tags_page(components['database'])
     elif page == "🔤 Manage Keywords":
-        render_manage_keywords_page(db)
+        render_manage_keywords_page(components['database'])
     elif page == "📤 Export":
-        render_export_page(db)
+        render_export_page(components['database'], components['export_manager'])
     elif page == "📊 Summary":
-        render_summary_page(db)
+        render_summary_page(components['database'])
     
     # Footer
     st.sidebar.markdown("---")

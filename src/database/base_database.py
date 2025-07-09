@@ -40,6 +40,11 @@ class BaseDatabaseInterface(ABC):
         """Get summary of all talks."""
         pass
     
+    @abstractmethod
+    def get_talks_with_paragraph_counts(self) -> List[Dict]:
+        """Get all talks with their paragraph counts."""
+        pass
+    
     # Paragraph operations
     @abstractmethod
     def add_paragraph(self, talk_id: int, paragraph_number: int, 
@@ -65,6 +70,11 @@ class BaseDatabaseInterface(ABC):
         pass
     
     @abstractmethod
+    def get_paragraphs_by_tag(self, tag_id: int) -> List[Dict]:
+        """Get all paragraphs that have a specific tag."""
+        pass
+    
+    @abstractmethod
     def mark_paragraph_reviewed(self, paragraph_id: int, reviewed: bool = True) -> None:
         """Mark a paragraph as reviewed."""
         pass
@@ -82,6 +92,16 @@ class BaseDatabaseInterface(ABC):
     @abstractmethod
     def update_paragraph_reviewed_status(self) -> None:
         """Update reviewed status based on whether paragraph has tags."""
+        pass
+    
+    @abstractmethod
+    def get_paragraph_count_for_tag(self, tag_id: int) -> int:
+        """Get the number of paragraphs assigned to a specific tag."""
+        pass
+    
+    @abstractmethod
+    def get_untagged_paragraphs_summary(self) -> Dict[str, Any]:
+        """Get summary statistics for untagged paragraphs."""
         pass
     
     # Tag operations
@@ -121,6 +141,11 @@ class BaseDatabaseInterface(ABC):
         pass
     
     @abstractmethod
+    def remove_tag_from_all_paragraphs(self, tag_id: int) -> int:
+        """Remove a tag from all paragraphs and return the number of paragraphs affected."""
+        pass
+    
+    @abstractmethod
     def update_tag(self, tag_id: int, name: str = None, description: str = None, 
                    parent_tag_id: int = None) -> None:
         """Update a tag's properties."""
@@ -139,6 +164,16 @@ class BaseDatabaseInterface(ABC):
     @abstractmethod
     def get_tag_hierarchy(self, tag_id: int) -> List[int]:
         """Get all parent tags for a given tag (including the tag itself)."""
+        pass
+    
+    @abstractmethod
+    def get_tag_usage_statistics(self) -> List[Dict]:
+        """Get usage statistics for all tags."""
+        pass
+    
+    @abstractmethod
+    def get_top_tags_by_usage(self, limit: int = 10) -> List[Dict]:
+        """Get top tags by paragraph count."""
         pass
     
     # Keyword operations
@@ -167,64 +202,12 @@ class BaseDatabaseInterface(ABC):
         """Add keyword associations for a paragraph."""
         pass
     
-    # File processing operations
-    @abstractmethod
-    def parse_talk_file(self, file_path: str) -> Dict:
-        """Parse a single talk file and return its metadata and content."""
-        pass
-    
-    @abstractmethod
-    def split_into_paragraphs(self, content: str) -> List[str]:
-        """Split talk content into paragraphs."""
-        pass
-    
-    @abstractmethod
-    def scan_for_keywords(self, keywords: List[str], match_whole_words: bool = True) -> List[Dict]:
-        """Scan all text files for keywords and return matching paragraphs."""
-        pass
-    
-    @abstractmethod
-    def search_and_populate_database(self, keywords: List[str], match_whole_words: bool = True) -> List[Dict]:
-        """Search for keywords in files and populate database with matching content."""
-        pass
-    
-    # Export operations
-    @abstractmethod
-    def export_to_markdown(self, output_file: str = None) -> str:
-        """Export database content to markdown format organized by tag hierarchy."""
-        pass
-    
-    # Database-specific query methods (to replace direct SQL calls)
-    @abstractmethod
-    def get_paragraph_count_for_tag(self, tag_id: int) -> int:
-        """Get the number of paragraphs assigned to a specific tag."""
-        pass
-    
-    @abstractmethod
-    def remove_tag_from_all_paragraphs(self, tag_id: int) -> int:
-        """Remove a tag from all paragraphs and return the number of paragraphs affected."""
-        pass
-    
-    @abstractmethod
-    def get_talks_with_paragraph_counts(self) -> List[Dict]:
-        """Get all talks with their paragraph counts."""
-        pass
-    
-    @abstractmethod
-    def get_untagged_paragraphs_summary(self) -> Dict[str, Any]:
-        """Get summary statistics for untagged paragraphs."""
-        pass
-    
-    @abstractmethod
-    def get_tag_usage_statistics(self) -> List[Dict]:
-        """Get usage statistics for all tags."""
-        pass
-    
     @abstractmethod
     def get_keyword_usage_statistics(self) -> List[Dict]:
         """Get usage statistics for all keywords."""
         pass
     
+    # Statistics and metadata operations
     @abstractmethod
     def get_export_statistics(self) -> Dict[str, Any]:
         """Get comprehensive statistics for export preview."""
@@ -233,9 +216,4 @@ class BaseDatabaseInterface(ABC):
     @abstractmethod
     def get_database_info(self) -> Dict[str, Any]:
         """Get database metadata and table information."""
-        pass
-    
-    @abstractmethod
-    def get_top_tags_by_usage(self, limit: int = 10) -> List[Dict]:
-        """Get top tags by paragraph count."""
         pass

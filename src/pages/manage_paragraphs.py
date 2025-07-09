@@ -5,19 +5,20 @@ import streamlit as st
 from typing import Dict, Any
 from ..components.ui_components import FlashcardNavigator, TagSelector, FilterControls
 from ..utils.helpers import highlight_keywords, display_hierarchical_tags_with_indentation, display_matched_keywords
+from ..database.base_database import BaseDatabaseInterface
 
 
-def render_manage_paragraphs_page(db) -> None:
+def render_manage_paragraphs_page(database: BaseDatabaseInterface) -> None:
     """Render the Manage Paragraphs page with comprehensive management features."""
     st.header("🔧 Manage Paragraphs")
     st.markdown("*Comprehensive paragraph management - Filter, edit, and review tagged paragraphs*")
     
     # Enhanced filter controls
-    filter_controls = FilterControls(db)
+    filter_controls = FilterControls(database)
     filters = filter_controls.render_comprehensive_paragraph_filters()
     
     # Load filtered paragraphs
-    paragraphs = db.get_all_paragraphs_with_filters(
+    paragraphs = database.get_all_paragraphs_with_filters(
         tag_filter=filters['tag_filter'],
         keyword_filter=filters['keyword_filter'],
         untagged_only=filters['untagged_only'],
@@ -37,9 +38,9 @@ def render_manage_paragraphs_page(db) -> None:
         )
         
         if view_mode == "📋 List View":
-            _render_list_view(paragraphs, db, filters)
+            _render_list_view(paragraphs, database, filters)
         else:
-            _render_flashcard_view(paragraphs, db, filters)
+            _render_flashcard_view(paragraphs, database, filters)
     else:
         st.info("No paragraphs found with the current filters. Try adjusting your filter criteria.")
 
@@ -64,7 +65,7 @@ def _render_paragraph_summary(paragraphs, filters):
         st.metric("Untagged", untagged_count)
 
 
-def _render_list_view(paragraphs, db, filters):
+def _render_list_view(paragraphs, database: BaseDatabaseInterface, filters):
     """Render paragraphs in a list view for quick scanning and editing."""
     st.subheader("📋 Paragraph List")
     
@@ -106,12 +107,12 @@ def _render_list_view(paragraphs, db, filters):
                 # Quick actions
                 if not paragraph.get('reviewed'):
                     if st.button("✅ Mark Reviewed", key=f"review_{paragraph['id']}"):
-                        db.mark_paragraph_reviewed(paragraph['id'], True)
+                        database.mark_paragraph_reviewed(paragraph['id'], True)
                         st.success("Marked as reviewed!")
                         st.rerun()
                 else:
                     if st.button("🔄 Mark Unreviewed", key=f"unreview_{paragraph['id']}"):
-                        db.mark_paragraph_reviewed(paragraph['id'], False)
+                        database.mark_paragraph_reviewed(paragraph['id'], False)
                         st.info("Marked as unreviewed!")
                         st.rerun()
             
@@ -129,7 +130,7 @@ def _render_list_view(paragraphs, db, filters):
             st.markdown(content)
             
             # Tags and management
-            display_hierarchical_tags_with_indentation(paragraph['id'], db)
+            display_hierarchical_tags_with_indentation(paragraph['id'], database)
             
             # Notes
             if paragraph.get('notes'):
@@ -137,11 +138,11 @@ def _render_list_view(paragraphs, db, filters):
             
             # Quick tag management
             with st.expander("🏷️ Manage Tags", expanded=False):
-                tag_selector = TagSelector(db, paragraph['id'])
+                tag_selector = TagSelector(database, paragraph['id'])
                 tag_selector.render_enhanced_tag_search(f"list_{paragraph['id']}")
 
 
-def _render_flashcard_view(paragraphs, db, filters):
+def _render_flashcard_view(paragraphs, database: BaseDatabaseInterface, filters):
     """Render paragraphs in flashcard view for detailed editing."""
     st.subheader("📄 Flashcard View")
     
@@ -156,10 +157,10 @@ def _render_flashcard_view(paragraphs, db, filters):
     
     if current_paragraph:
         st.divider()
-        _render_management_flashcard(current_paragraph, db, filters['keyword_filter'])
+        _render_management_flashcard(current_paragraph, database, filters['keyword_filter'])
 
 
-def _render_management_flashcard(paragraph: Dict[str, Any], db, keyword_filter: str = None) -> None:
+def _render_management_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseInterface, keyword_filter: str = None) -> None:
     """Render a single paragraph as a management flashcard."""
     with st.container():
         # Talk information header
@@ -180,7 +181,7 @@ def _render_management_flashcard(paragraph: Dict[str, Any], db, keyword_filter: 
                 type="secondary" if current_status else "primary",
                 key=f"toggle_review_{paragraph['id']}"
             ):
-                db.mark_paragraph_reviewed(paragraph['id'], not current_status)
+                database.mark_paragraph_reviewed(paragraph['id'], not current_status)
                 st.rerun()
         
         # Display matched keywords
@@ -200,15 +201,15 @@ def _render_management_flashcard(paragraph: Dict[str, Any], db, keyword_filter: 
         st.markdown("---")
         
         # Notes management
-        _render_notes_management(paragraph, db)
+        _render_notes_management(paragraph, database)
         
         # Tags management
         st.markdown("**🏷️ Current Tags:**")
-        display_hierarchical_tags_with_indentation(paragraph['id'], db)
+        display_hierarchical_tags_with_indentation(paragraph['id'], database)
         
         # Tag management interface
         with st.expander("➕ Add/Edit Tags", expanded=False):
-            tag_selector = TagSelector(db, paragraph['id'])
+            tag_selector = TagSelector(database, paragraph['id'])
             
             tab1, tab2, tab3 = st.tabs(["🔍 Search Tags", "🏷️ Browse All", "➕ Create New"])
             
@@ -222,7 +223,7 @@ def _render_management_flashcard(paragraph: Dict[str, Any], db, keyword_filter: 
                 tag_selector.render_enhanced_tag_creation("manage_flashcard")
 
 
-def _render_notes_management(paragraph: Dict[str, Any], db) -> None:
+def _render_notes_management(paragraph: Dict[str, Any], database: BaseDatabaseInterface) -> None:
     """Render notes management section."""
     st.markdown("**📝 Notes:**")
     
@@ -253,7 +254,7 @@ def _render_notes_management(paragraph: Dict[str, Any], db) -> None:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button("💾 Save", type="primary"):
-                    db.update_paragraph_notes(paragraph['id'], notes)
+                    database.update_paragraph_notes(paragraph['id'], notes)
                     st.session_state[f"editing_notes_{paragraph['id']}"] = False
                     st.success("Notes saved!")
                     st.rerun()

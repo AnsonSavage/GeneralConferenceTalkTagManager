@@ -3,17 +3,18 @@ Add Tags to Paragraphs page module - Flashcard-style tagging workflow.
 """
 import streamlit as st
 from typing import Dict, Any
-from ..components.ui_components import FlashcardNavigator, TagSelector
+from ..components.ui_components import FlashcardNavigator
 from ..utils.helpers import highlight_keywords, display_hierarchical_tags_with_indentation, display_matched_keywords
+from ..database.base_database import BaseDatabaseInterface
 
 
-def render_add_tags_page(db) -> None:
+def render_add_tags_page(database: BaseDatabaseInterface) -> None:
     """Render the Add Tags to Paragraphs page with flashcard interface."""
     st.header("📝 Add Tags to Paragraphs")
     st.markdown("*Quick tagging workflow - Add tags and notes to untagged paragraphs*")
     
     # Load only untagged paragraphs
-    paragraphs = db.get_all_paragraphs_with_filters(untagged_only=True)
+    paragraphs = database.get_all_paragraphs_with_filters(untagged_only=True)
     
     if paragraphs:
         # Initialize flashcard navigator
@@ -23,7 +24,7 @@ def render_add_tags_page(db) -> None:
         current_paragraph = navigator.get_current_item()
         
         if current_paragraph:
-            _render_tagging_flashcard(current_paragraph, db, navigator)
+            _render_tagging_flashcard(current_paragraph, database: BaseDatabaseInterface, navigator)
             
             # Floating navigation at bottom
             navigator.render_floating_navigation()
@@ -32,11 +33,11 @@ def render_add_tags_page(db) -> None:
         st.info("Great job! All paragraphs in your database now have tags. You can go to 'Manage Paragraphs' to review and edit existing tags.")
         
         # Show some stats
-        total_paragraphs = len(db.get_all_paragraphs_with_filters())
+        total_paragraphs = len(database.get_all_paragraphs_with_filters())
         st.metric("Total Paragraphs", total_paragraphs)
 
 
-def _render_tagging_flashcard(paragraph: Dict[str, Any], db, navigator: FlashcardNavigator) -> None:
+def _render_tagging_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseInterface, navigator: FlashcardNavigator) -> None:
     """Render a single paragraph flashcard for tagging."""
     with st.container():
         # Talk information header with enhanced styling
@@ -69,20 +70,20 @@ def _render_tagging_flashcard(paragraph: Dict[str, Any], db, navigator: Flashcar
         """, unsafe_allow_html=True)
         
         # Current tags display
-        display_hierarchical_tags_with_indentation(paragraph['id'], db)
+        display_hierarchical_tags_with_indentation(paragraph['id'], database)
         
         st.divider()
         
         # Streamlined tagging interface
-        _render_streamlined_tagging_interface(paragraph['id'], db, navigator)
+        _render_streamlined_tagging_interface(paragraph['id'], database, navigator)
 
 
-def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: FlashcardNavigator) -> None:
+def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatabaseInterface, navigator: FlashcardNavigator) -> None:
     """Render streamlined tagging interface with hierarchical tag display."""
     st.markdown("### 🏷️ Add Tags")
     
     # Get all tags organized by hierarchy
-    all_tags = db.get_all_tags()
+    all_tags = database.get_all_tags()
     root_tags = [tag for tag in all_tags if tag['parent_tag_id'] is None]
     
     # Tag selection dropdown - similar to Parent Tag dropdown in Manage Tags
@@ -106,8 +107,8 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
             # Only process if this is a different selection than last time
             if st.session_state.get(last_processed_key) != selected_tag_name:
                 selected_tag_id = tag_options[selected_tag_name]
-                db.tag_paragraph_with_hierarchy(paragraph_id, selected_tag_id)
-                db.update_paragraph_reviewed_status()
+                database.tag_paragraph_with_hierarchy(paragraph_id, selected_tag_id)
+                database.update_paragraph_reviewed_status()
                 st.success(f"✅ Added '{selected_tag_name}'!")
                 
                 # Mark this tag as processed for this paragraph
@@ -135,9 +136,9 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
                 if new_tag_name:
                     try:
                         parent_id = parent_options.get(parent_tag) if parent_tag and all_tags else None
-                        tag_id = db.add_tag(new_tag_name, new_tag_description, parent_id)
-                        db.tag_paragraph_with_hierarchy(paragraph_id, tag_id)
-                        db.update_paragraph_reviewed_status()
+                        tag_id = database.add_tag(new_tag_name, new_tag_description, parent_id)
+                        database.tag_paragraph_with_hierarchy(paragraph_id, tag_id)
+                        database.update_paragraph_reviewed_status()
                         st.success(f"✅ Created and added '{new_tag_name}'!")
                         st.rerun()
                     except ValueError as e:
@@ -178,8 +179,8 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
                 
                 with col2:
                     if st.button("➕", key=f"hier_add_{tag['id']}", help=f"Add {tag['name']}"):
-                        db.tag_paragraph_with_hierarchy(paragraph_id, tag['id'])
-                        db.update_paragraph_reviewed_status()
+                        database.tag_paragraph_with_hierarchy(paragraph_id, tag['id'])
+                        database.update_paragraph_reviewed_status()
                         st.success(f"✅ Added '{tag['name']}'!")
                         st.rerun()
                 
@@ -209,7 +210,7 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
 
     # Notes as dropdown (request #3)
     with st.expander("📝 Add Notes (Optional)", expanded=False):
-        _render_notes_section(paragraph_id, db)
+        _render_notes_section(paragraph_id, database)
     
     # Completion workflow
     st.divider()
@@ -219,7 +220,7 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
     
     with col1:
         if st.button("✅ Complete & Next", type="primary", key="complete_and_next"):
-            db.mark_paragraph_reviewed(paragraph_id, True)
+            database.mark_paragraph_reviewed(paragraph_id, True)
             # Move to next paragraph automatically
             current_index = navigator.get_current_index()
             if current_index < navigator.total_items - 1:
@@ -242,10 +243,10 @@ def _render_streamlined_tagging_interface(paragraph_id: int, db, navigator: Flas
         st.info(f"📊 {remaining} paragraphs remaining")
 
 
-def _render_notes_section(paragraph_id: int, db) -> None:
+def _render_notes_section(paragraph_id: int, database: BaseDatabaseInterface) -> None:
     """Render the notes section for the paragraph."""
     # Get current paragraph data to access notes
-    paragraph_data = db.get_paragraph_with_notes(paragraph_id)
+    paragraph_data = database.get_paragraph_with_notes(paragraph_id)
     current_notes = paragraph_data.get('notes', '') or ''
     
     with st.form(f"notes_form_{paragraph_id}"):
@@ -257,6 +258,6 @@ def _render_notes_section(paragraph_id: int, db) -> None:
         )
         
         if st.form_submit_button("💾 Save Notes", type="primary"):
-            db.update_paragraph_notes(paragraph_id, notes)
+            database.update_paragraph_notes(paragraph_id, notes)
             st.success("✅ Notes saved!")
             st.rerun()

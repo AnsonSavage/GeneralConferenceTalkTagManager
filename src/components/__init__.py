@@ -1,6 +1,8 @@
 """
 Components module initialization.
 """
-from .ui_components import FlashcardNavigator, TagSelector, FilterControls
+from .flashcard_navigator import FlashcardNavigator
+from .tag_selector import TagSelector
+from .filter_controls import FilterControls
 
 __all__ = ['FlashcardNavigator', 'TagSelector', 'FilterControls']

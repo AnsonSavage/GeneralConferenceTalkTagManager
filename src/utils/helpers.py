@@ -4,6 +4,7 @@ Utility functions for the Conference Talks Analysis application.
 import streamlit as st
 import random
 from typing import List, Dict, Any
+from ..database.base_database import BaseDatabaseInterface  
 
 
 def highlight_keywords(content: str, keywords: List[str], paragraph_id: int = None) -> str:
@@ -119,7 +120,7 @@ def get_random_index(max_index: int) -> int:
     return random.randint(0, max_index - 1)
 
 
-def display_paragraph_tags(paragraph_id: int, db, removable: bool = True) -> None:
+def display_paragraph_tags(paragraph_id: int, db: BaseDatabaseInterface, removable: bool = True) -> None:
     """
     Display tags for a paragraph with optional remove buttons.
     
@@ -141,7 +142,7 @@ def display_paragraph_tags(paragraph_id: int, db, removable: bool = True) -> Non
                     st.write(f"🏷️ {tag['name']}")
 
 
-def display_hierarchical_tags(paragraph_id: int, db) -> None:
+def display_hierarchical_tags(paragraph_id: int, db: BaseDatabaseInterface) -> None:
     """
     Display tags with hierarchy (explicit vs implicit).
     
@@ -366,7 +367,7 @@ def display_matched_keywords(paragraph_data: Dict[str, Any]) -> None:
             st.markdown(f'<div style="margin-bottom: 10px;">{keywords_html}</div>', unsafe_allow_html=True)
 
 
-def display_hierarchical_tags_with_indentation(paragraph_id: int, db) -> None:
+def display_hierarchical_tags_with_indentation(paragraph_id: int, db: BaseDatabaseInterface) -> None:
     """
     Display tags with proper visual hierarchy using Unicode characters and styled indentation.
     
@@ -391,7 +392,7 @@ def display_hierarchical_tags_with_indentation(paragraph_id: int, db) -> None:
         st.info("No tags assigned to this paragraph yet.")
 
 
-def _build_tag_tree(paragraph_tags: List[Dict], db) -> List[Dict]:
+def _build_tag_tree(paragraph_tags: List[Dict], db: BaseDatabaseInterface) -> List[Dict]:
     """
     Build a hierarchical tree structure from paragraph tags.
     
@@ -447,7 +448,7 @@ def _build_tag_tree(paragraph_tags: List[Dict], db) -> List[Dict]:
     return root_tags
 
 
-def _render_tag_tree(tag_tree: List[Dict], paragraph_id: int, db, level: int = 0):
+def _render_tag_tree(tag_tree: List[Dict], paragraph_id: int, db: BaseDatabaseInterface, level: int = 0):
     """
     Render the tag tree with proper indentation and styling.
     
@@ -496,7 +497,64 @@ def _render_tag_tree(tag_tree: List[Dict], paragraph_id: int, db, level: int = 0
             _render_tag_tree(tag_node['children'], paragraph_id, db, level + 1)
 
 
-def display_tag_hierarchy_for_selection(db, exclude_tag_ids: List[int] = None) -> Dict:
+def display_compact_tag_list(tags: List[Dict], removable: bool = True, 
+                            paragraph_id: int = None, db: BaseDatabaseInterface = None) -> None:
+    """
+    Display tags in a compact, visually appealing format.
+    
+    Args:
+        tags: List of tag dictionaries
+        removable: Whether tags can be removed
+        paragraph_id: ID of paragraph (needed for removal)
+        db: Database instance (needed for removal)
+    """
+    if not tags:
+        st.info("No tags assigned.")
+        return
+    
+    # Group tags by hierarchy level for better display
+    root_tags = [tag for tag in tags if tag.get('parent_tag_id') is None]
+    child_tags = [tag for tag in tags if tag.get('parent_tag_id') is not None]
+    
+    # Display as styled badges
+    tag_html_parts = []
+    
+    for tag in root_tags:
+        breadcrumb = display_tag_breadcrumb(tag['id'], db) if db else tag['name']
+        if removable and paragraph_id and db:
+            tag_html_parts.append(f'''
+                <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                           color: white; padding: 4px 8px; border-radius: 12px; 
+                           font-size: 11px; margin: 2px; display: inline-block;">
+                    🏷️ {tag['name']}
+                </span>
+            ''')
+        else:
+            tag_html_parts.append(f'''
+                <span style="background: #f8f9fa; color: #495057; border: 1px solid #dee2e6;
+                           padding: 4px 8px; border-radius: 12px; 
+                           font-size: 11px; margin: 2px; display: inline-block;">
+                    🏷️ {tag['name']}
+                </span>
+            ''')
+    
+    if tag_html_parts:
+        st.markdown(f'<div>{"".join(tag_html_parts)}</div>', unsafe_allow_html=True)
+        
+        # Add remove buttons if needed
+        if removable and paragraph_id and db:
+            cols = st.columns(min(len(tags), 6))
+            for i, tag in enumerate(tags):
+                 with cols[i % 6]:
+                    if st.button("❌", key=f"remove_compact_{paragraph_id}_{tag['id']}", 
+                               help=f"Remove {tag['name']}"):
+                         db.remove_tag_from_paragraph(paragraph_id, tag['id'])
+                         if hasattr(db, 'update_paragraph_reviewed_status'):
+                             db.update_paragraph_reviewed_status()
+                             st.rerun()
+
+
+def display_tag_hierarchy_for_selection(db: BaseDatabaseInterface, exclude_tag_ids: List[int] = None) -> Dict:
     """
     Display tag hierarchy for selection with proper indentation.
     
@@ -584,7 +642,7 @@ def _build_full_tag_tree(tags: List[Dict]) -> List[Dict]:
     return root_tags
 
 
-def display_tag_breadcrumb(tag_id: int, db) -> str:
+def display_tag_breadcrumb(tag_id: int, db: BaseDatabaseInterface) -> str:
     """
     Display tag breadcrumb showing the full hierarchy path.
     
@@ -608,8 +666,7 @@ def display_tag_breadcrumb(tag_id: int, db) -> str:
     return " > ".join(breadcrumb_parts)
 
 
-def display_compact_tag_list(tags: List[Dict], removable: bool = True, 
-                           paragraph_id: int = None, db=None) -> None:
+def display_compact_tag_list(tags: List[Dict], removable: bool = True, paragraph_id: int = None, db: BaseDatabaseInterface = None) -> None:
     """
     Display tags in a compact, visually appealing format.
     

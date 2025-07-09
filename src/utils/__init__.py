@@ -1,18 +1,10 @@
 """
-Utils module initialization.
+Utilities package for conference talks application.
 """
-from .helpers import *
 
-__all__ = [
-    'highlight_keywords',
-    'parse_keywords', 
-    'get_random_index',
-    'display_paragraph_tags',
-    'display_hierarchical_tags',
-    'display_talk_info',
-    'get_navigation_state',
-    'update_navigation_state',
-    'clear_session_state_key',
-    'show_success_message',
-    'show_error_message'
-]
+from .file_parser import FileParser
+from .text_processor import TextProcessor
+from .search_manager import SearchManager
+from .export_manager import ExportManager
+
+__all__ = ['FileParser', 'TextProcessor', 'SearchManager', 'ExportManager']

@@ -3,16 +3,17 @@ Summary page module.
 """
 import streamlit as st
 from typing import List, Dict, Any
+from ..database.base_database import BaseDatabaseInterface
 
 
-def render_summary_page(db) -> None:
+def render_summary_page(database: BaseDatabaseInterface) -> None:
     """Render the Summary page."""
     st.header("Project Summary")
     
     # Get statistics
-    talks = db.get_talks_summary()
-    all_tags = db.get_all_tags()
-    keywords = db.get_keywords()
+    talks = database.get_talks_summary()
+    all_tags = database.get_all_tags()
+    keywords = database.get_keywords()
     
     # Display metrics
     _render_summary_metrics(talks, all_tags)

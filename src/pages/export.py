@@ -5,9 +5,9 @@ Allows users to export database content to markdown format.
 import streamlit as st
 import os
 from datetime import datetime
-from typing import Dict
+from ..database.base_database import BaseDatabaseInterface  
 
-def render_export_page(db):
+def render_export_page(database: BaseDatabaseInterface, export_manager) -> None:
     """Render the export page."""
     st.header("📤 Export Database")
     st.markdown("Export your tagged conference talks to a markdown file organized by tag hierarchy.")
@@ -34,8 +34,8 @@ def render_export_page(db):
     with col2:
         st.markdown("### Export Preview")
         
-        # Get export statistics using the abstract method
-        stats = db.get_export_statistics()
+        # Get export statistics
+        stats = database.get_export_statistics()
         
         st.metric("Root Tags", stats['root_tags'])
         st.metric("Total Tags", stats['total_tags'])
@@ -81,7 +81,7 @@ def render_export_page(db):
             with st.spinner("Generating preview..."):
                 try:
                     # Generate a limited preview (first few tags only)
-                    preview_content = _generate_export_preview(db)
+                    preview_content = _generate_export_preview(database)
                     
                     st.markdown("### Export Preview (First 500 characters)")
                     st.code(preview_content[:500] + "..." if len(preview_content) > 500 else preview_content, language="markdown")
@@ -108,11 +108,11 @@ def render_export_page(db):
                         output_path = filename
                     
                     # Generate and save export
-                    markdown_content = db.export_to_markdown(output_path)
+                    markdown_content = export_manager.export_to_markdown(output_path)
                     
                     # Success message with file info
                     file_size = len(markdown_content.encode('utf-8'))
-                    st.success(f"✅ Export completed!")
+                    st.success("✅ Export completed!")
                     st.info(f"**File:** {output_path}\n**Size:** {file_size:,} bytes")
                     
                     # Offer download if file is in current directory
@@ -138,7 +138,7 @@ def render_export_page(db):
         if st.button("📋 Copy to Clipboard"):
             with st.spinner("Generating content..."):
                 try:
-                    markdown_content = db.export_to_markdown()
+                    markdown_content = export_manager.export_to_markdown()
                     
                     # Display content in a text area for easy copying
                     st.markdown("### Copy the content below:")
@@ -162,17 +162,17 @@ def render_export_page(db):
     
     with col1:
         if st.button("🗂️ Export Statistics"):
-            _show_export_statistics(db)
+            _show_export_statistics(database)
     
     with col2:
         if st.button("🔧 Database Info"):
-            _show_database_info(db)
+            _show_database_info(database)
 
 
-def _generate_export_preview(db) -> str:
+def _generate_export_preview(database: BaseDatabaseInterface) -> str:
     """Generate a limited preview of the export."""
     # Get just the first few root tags for preview
-    all_tags = db.get_all_tags()
+    all_tags = database.get_all_tags()
     root_tags = [tag for tag in all_tags if tag['parent_tag_id'] is None]
     
     if not root_tags:
@@ -208,12 +208,12 @@ def _generate_export_preview(db) -> str:
     return '\n'.join(markdown_content)
 
 
-def _show_export_statistics(db):
+def _show_export_statistics(database: BaseDatabaseInterface) -> None:
     """Show detailed statistics about what will be exported."""
     st.markdown("### 📊 Export Statistics")
     
-    # Get statistics using abstract methods
-    stats = db.get_export_statistics()
+    # Get statistics
+    stats = database.get_export_statistics()
     
     # Display in columns
     col1, col2, col3 = st.columns(3)
@@ -233,8 +233,8 @@ def _show_export_statistics(db):
         st.metric("Used Keywords", stats['used_keywords'])
         st.metric("Untagged Paragraphs", stats['untagged_paragraphs'])
     
-    # Top tags by paragraph count using abstract method
-    top_tags = db.get_top_tags_by_usage(10)
+    # Top tags by paragraph count
+    top_tags = database.get_top_tags_by_usage(10)
     
     if top_tags:
         st.markdown("### 🏷️ Top Tags by Paragraph Count")
@@ -242,12 +242,12 @@ def _show_export_statistics(db):
             st.write(f"{i}. **{tag['name']}**: {tag['usage_count']} paragraphs")
 
 
-def _show_database_info(db):
+def _show_database_info(database: BaseDatabaseInterface) -> None:
     """Show general database information."""
     st.markdown("### 🗄️ Database Information")
     
-    # Get database info using abstract method
-    db_info = db.get_database_info()
+    # Get database info
+    db_info = database.get_database_info()
     
     # Database file info
     col1, col2 = st.columns(2)
