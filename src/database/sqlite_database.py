@@ -424,6 +424,16 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.commit()
         conn.close()
     
+    def mark_all_paragraphs_not_reviewed(self) -> None:
+        """Mark all paragraphs as not reviewed."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE paragraphs SET reviewed = 0, review_date = NULL WHERE reviewed = 1"
+        )
+        conn.commit()
+        conn.close()
+
     def delete_tag(self, tag_id: int) -> None:
         """Delete a tag and update its children to have no parent"""
         conn = sqlite3.connect(self.db_path)
