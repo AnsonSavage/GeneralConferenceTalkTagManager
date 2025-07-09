@@ -87,14 +87,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
                 FOREIGN KEY (keyword_id) REFERENCES keywords (id) ON DELETE CASCADE,
                 UNIQUE(paragraph_id, keyword_id)
             );
-            
-            CREATE TABLE IF NOT EXISTS search_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                search_keywords TEXT NOT NULL, -- JSON array
-                results_count INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            
+          
             -- Indexes for better performance
             CREATE INDEX IF NOT EXISTS idx_paragraphs_talk_id ON paragraphs(talk_id);
             CREATE INDEX IF NOT EXISTS idx_paragraphs_reviewed ON paragraphs(reviewed);
@@ -104,13 +97,6 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             CREATE INDEX IF NOT EXISTS idx_paragraph_keywords_keyword_id ON paragraph_keywords(keyword_id);
             CREATE INDEX IF NOT EXISTS idx_tags_parent ON tags(parent_tag_id);
         """)
-        
-        # Add notes column if it doesn't exist (for existing databases)
-        try:
-            cursor.execute("ALTER TABLE paragraphs ADD COLUMN notes TEXT")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass  # Column already exists
         
         conn.commit()
         conn.close()
