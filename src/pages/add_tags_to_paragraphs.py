@@ -48,12 +48,30 @@ def render_add_tags_page(database: BaseDatabaseInterface) -> None:
 def _render_tagging_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseInterface, navigator: FlashcardNavigator) -> None:
     """Render a single paragraph flashcard for tagging."""
     with st.container():
-        # Talk information header with enhanced styling
+        # Get reviewed status for display
+        reviewed_status = paragraph.get('reviewed', False)
+        review_date = paragraph.get('review_date')
+        
+        # Talk information header with enhanced styling and reviewed status
+        reviewed_indicator = ""
+        if reviewed_status:
+            reviewed_indicator = f'<span style="background-color: #d4edda; color: #155724; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; margin-left: 10px;">✅ REVIEWED</span>'
+            if review_date:
+                import datetime
+                try:
+                    review_dt = datetime.datetime.fromisoformat(review_date)
+                    reviewed_indicator += f'<span style="color: #6c757d; font-size: 10px; margin-left: 5px;">({review_dt.strftime("%m/%d/%Y")})</span>'
+                except:
+                    pass
+        else:
+            reviewed_indicator = f'<span style="background-color: #f8d7da; color: #721c24; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; margin-left: 10px;">⚠️ NOT REVIEWED</span>'
+        
         st.markdown(f"""
         <div style="background: linear-gradient(90deg, #1f4e7a, #2d5a87); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
             <h3 style="margin: 0; color: white;">📖 {paragraph['talk_title']}</h3>
             <p style="margin: 5px 0 0 0; opacity: 0.9;">
                 <strong>{paragraph['speaker']}</strong> • {paragraph['conference_date']} • Paragraph {paragraph['paragraph_number']}
+                {reviewed_indicator}
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -226,6 +244,16 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
     with col1:
         if st.button("✅ Complete & Next", type="primary", key="complete_and_next"):
             database.mark_paragraph_reviewed(paragraph_id, True)
+            
+            # Update the paragraph data in session state to reflect the reviewed status
+            if 'add_tags_paragraph_list' in st.session_state:
+                for i, para in enumerate(st.session_state['add_tags_paragraph_list']):
+                    if para['id'] == paragraph_id:
+                        st.session_state['add_tags_paragraph_list'][i]['reviewed'] = True
+                        from datetime import datetime
+                        st.session_state['add_tags_paragraph_list'][i]['review_date'] = datetime.now().isoformat()
+                        break
+            
             # Move to next paragraph automatically
             current_index = navigator.get_current_index()
             if current_index < navigator.total_items - 1:
