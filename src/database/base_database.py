@@ -131,11 +131,6 @@ class BaseDatabaseInterface(ABC):
         pass
     
     @abstractmethod
-    def tag_paragraph_with_hierarchy(self, paragraph_id: int, tag_id: int) -> None:
-        """Tag a paragraph and all its parent tags."""
-        pass
-    
-    @abstractmethod
     def remove_tag_from_paragraph(self, paragraph_id: int, tag_id: int) -> None:
         """Remove a tag from a paragraph."""
         pass

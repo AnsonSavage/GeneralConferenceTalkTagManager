@@ -782,13 +782,6 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         }
     
     @override
-    def tag_paragraph_with_hierarchy(self, paragraph_id: int, tag_id: int) -> None:
-        """Tag a paragraph and all its parent tags."""
-        hierarchy = self.get_tag_hierarchy(tag_id)
-        for tag in hierarchy:
-            self.tag_paragraph(paragraph_id, tag)
-    
-    @override
     def update_tag(self, tag_id: int, name: str = None, description: str = None, parent_tag_id: int = None) -> None:
         """Update a tag's properties."""
         conn = sqlite3.connect(self.db_path)
