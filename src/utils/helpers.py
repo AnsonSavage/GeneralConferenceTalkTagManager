@@ -17,7 +17,7 @@ def highlight_keywords(content: str, keywords: List[str], paragraph_id: int = No
         paragraph_id: Optional paragraph ID to check checkbox states for selective highlighting
         
     Returns:
-        Content with highlighted keywords
+        Content with highlighted keywords using HTML styling
     """
     highlighted_content = content
     
@@ -35,13 +35,13 @@ def highlight_keywords(content: str, keywords: List[str], paragraph_id: int = No
                 caps_key = f"caps_{paragraph_id}_{keyword}"
                 use_caps = st.session_state.get(caps_key, True)
             
-            # Apply highlighting with appropriate case
+            # Apply highlighting with HTML styling for proper display in HTML divs
             if use_caps:
-                highlighted_keyword = f"**:red[{keyword.upper()}]**"
-                highlighted_keyword_cap = f"**:red[{keyword.capitalize().upper()}]**"
+                highlighted_keyword = f'<span style="color: #d32f2f; font-weight: bold;">{keyword.upper()}</span>'
+                highlighted_keyword_cap = f'<span style="color: #d32f2f; font-weight: bold;">{keyword.capitalize().upper()}</span>'
             else:
-                highlighted_keyword = f"**:red[{keyword}]**"
-                highlighted_keyword_cap = f"**:red[{keyword.capitalize()}]**"
+                highlighted_keyword = f'<span style="color: #d32f2f; font-weight: bold;">{keyword}</span>'
+                highlighted_keyword_cap = f'<span style="color: #d32f2f; font-weight: bold;">{keyword.capitalize()}</span>'
             
             # Replace both lowercase and capitalized versions
             highlighted_content = highlighted_content.replace(keyword, highlighted_keyword)
@@ -63,7 +63,7 @@ def highlight_keywords_enhanced(content: str, keywords: List[str],
         style_preferences: Dictionary mapping keywords to style preferences ('caps', 'title', 'bold')
         
     Returns:
-        Content with highlighted keywords
+        Content with highlighted keywords using HTML styling
     """
     if active_keywords is None:
         active_keywords = keywords
@@ -77,15 +77,16 @@ def highlight_keywords_enhanced(content: str, keywords: List[str],
         if keyword in active_keywords:
             style = style_preferences.get(keyword, 'bold')
             
+            # Apply highlighting with HTML styling for proper display in HTML divs
             if style == 'caps':
-                highlighted_keyword = f"**:red[{keyword.upper()}]**"
-                highlighted_keyword_cap = f"**:red[{keyword.capitalize().upper()}]**"
+                highlighted_keyword = f'<span style="color: #d32f2f; font-weight: bold;">{keyword.upper()}</span>'
+                highlighted_keyword_cap = f'<span style="color: #d32f2f; font-weight: bold;">{keyword.capitalize().upper()}</span>'
             elif style == 'title':
-                highlighted_keyword = f"**:red[{keyword.title()}]**"
-                highlighted_keyword_cap = f"**:red[{keyword.capitalize().title()}]**"
+                highlighted_keyword = f'<span style="color: #d32f2f; font-weight: bold;">{keyword.title()}</span>'
+                highlighted_keyword_cap = f'<span style="color: #d32f2f; font-weight: bold;">{keyword.capitalize().title()}</span>'
             else:  # bold
-                highlighted_keyword = f"**:red[{keyword}]**"
-                highlighted_keyword_cap = f"**:red[{keyword.capitalize()}]**"
+                highlighted_keyword = f'<span style="color: #d32f2f; font-weight: bold;">{keyword}</span>'
+                highlighted_keyword_cap = f'<span style="color: #d32f2f; font-weight: bold;">{keyword.capitalize()}</span>'
             
             # Replace both lowercase and capitalized versions
             highlighted_content = highlighted_content.replace(keyword, highlighted_keyword)
