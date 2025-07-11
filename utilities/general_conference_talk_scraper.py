@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import os
 import re
 from datetime import datetime
+import argparse
 
 def sanitize_filename(filename):
     """Removes invalid characters from a string so it can be used as a filename."""
@@ -83,17 +84,27 @@ def main():
     """
     Main function to orchestrate the downloading and saving of talks.
     """
+    parser = argparse.ArgumentParser(description='Download LDS General Conference talks')
+    parser.add_argument('--start-year', type=int, default=2000, 
+                       help='Starting year for downloading talks (default: 2000)')
+    parser.add_argument('--end-year', type=int, default=datetime.now().year,
+                       help='Ending year for downloading talks (default: current year)')
+    parser.add_argument('--output-dir', type=str, default='./data/General_Conference_Talks/',
+                       help='Output directory for saved talks (default: ./data/General_Conference_Talks/)')
+    
+    args = parser.parse_args()
+
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     base_url = "https://www.churchofjesuschrist.org/study/general-conference"
-    start_year = 2000
-    # The script will run up to and including the current year.
+    start_year = args.start_year
     current_year = datetime.now().year
-    output_dir = "./data/General_Conference_Talks_space_fix_test/"
+    end_year = min(args.end_year, current_year)  # Don't go beyond current year
+    output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    for year in range(start_year, current_year + 1):
+    for year in range(start_year, end_year + 1):
         # Conferences are in April (04) and October (10)
         for month in ['04', '10']:
             conference_url = f"{base_url}/{year}/{month}?lang=eng"
