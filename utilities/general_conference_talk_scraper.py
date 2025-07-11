@@ -41,7 +41,8 @@ def get_talk_links(conference_url, session_headers):
 
 def get_talk_text(talk_url, session_headers):
     """
-    Fetches an individual talk page and extracts the title, speaker, and body text.
+    Fetches an individual talk page and extracts the title, speaker, and body text,
+    preserving paragraph breaks.
     """
     try:
         response = requests.get(talk_url, headers=session_headers)
@@ -55,20 +56,28 @@ def get_talk_text(talk_url, session_headers):
     title_element = soup.find('h1')
     title = title_element.get_text(strip=True) if title_element else "No Title Found"
 
-    # The speaker's name is in a <p> tag with the class 'author-name'
     speaker_element = soup.find('p', class_='author-name')
     speaker = speaker_element.get_text(strip=True) if speaker_element else "No Speaker Found"
 
-    # The main text is in a <div> with the class 'body-block'
     body_element = soup.find('div', class_='body-block')
     if not body_element:
         return title, speaker, "Could not find talk body."
 
-    # Select all paragraphs but exclude the small footnote markers
+    # Find all the paragraph tags
     paragraphs = body_element.select('p:not(.study-note)')
-    talk_text = '\n\n'.join(p.get_text(strip=True) for p in paragraphs)
+    
+    processed_paragraphs = []
+    for p in paragraphs:
+        # Get the text from a single paragraph, using separator=' ' to fix word squishing
+        # and strip=True to remove leading/trailing whitespace.
+        para_text = p.get_text(separator=' ', strip=True)
+        processed_paragraphs.append(para_text)
+
+    # Join the list of cleaned paragraphs together with double newlines.
+    talk_text = '\n\n'.join(processed_paragraphs)
 
     return title, speaker, talk_text
+
 
 def main():
     """
@@ -81,7 +90,7 @@ def main():
     start_year = 2000
     # The script will run up to and including the current year.
     current_year = datetime.now().year
-    output_dir = "/data/General_Conference_Talks"
+    output_dir = "./data/General_Conference_Talks_space_fix_test/"
     os.makedirs(output_dir, exist_ok=True)
 
     for year in range(start_year, current_year + 1):
