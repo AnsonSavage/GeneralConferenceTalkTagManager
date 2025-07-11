@@ -13,11 +13,14 @@ def render_add_tags_page(database: BaseDatabaseInterface) -> None:
     st.header("📝 Add Tags to Paragraphs")
     st.markdown("*Quick tagging workflow - Add tags and notes to untagged paragraphs*")
     
-    # Load only untagged paragraphs
-    paragraphs = database.get_all_paragraphs_with_filters(untagged_only=True)
+    # Store paragraph list in session state to prevent re-querying after tag additions
+    if 'add_tags_paragraph_list' not in st.session_state:
+        st.session_state['add_tags_paragraph_list'] = database.get_all_paragraphs_with_filters(untagged_only=True)
+    
+    paragraphs = st.session_state['add_tags_paragraph_list']
     
     if paragraphs:
-        # Initialize flashcard navigator
+        # Initialize flashcard navigator with the pinned paragraph list
         navigator = FlashcardNavigator(paragraphs, "add_tags_paragraph_index")
         
         # Get current paragraph
@@ -35,6 +38,11 @@ def render_add_tags_page(database: BaseDatabaseInterface) -> None:
         # Show some stats
         total_paragraphs = len(database.get_all_paragraphs_with_filters())
         st.metric("Total Paragraphs", total_paragraphs)
+        
+        # Add button to refresh the list if user wants to start over
+        if st.button("🔄 Refresh List"):
+            st.session_state.pop('add_tags_paragraph_list', None)
+            st.rerun()
 
 
 def _render_tagging_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseInterface, navigator: FlashcardNavigator) -> None:

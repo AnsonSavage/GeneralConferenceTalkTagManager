@@ -31,6 +31,22 @@ class FlashcardNavigator:
             return None
         return self.items[self.get_current_index()]
     
+    def move_to_next(self) -> bool:
+        """Move to the next item. Returns True if moved, False if already at end."""
+        current_index = self.get_current_index()
+        if current_index < self.total_items - 1:
+            st.session_state[self.session_key] = current_index + 1
+            return True
+        return False
+    
+    def move_to_previous(self) -> bool:
+        """Move to the previous item. Returns True if moved, False if already at start."""
+        current_index = self.get_current_index()
+        if current_index > 0:
+            st.session_state[self.session_key] = current_index - 1
+            return True
+        return False
+    
     def get_next_unreviewed_index(self, current_index: int) -> Optional[int]:
         """Find the next unreviewed item index starting from current_index + 1."""
         # Search forward from current position
@@ -50,6 +66,39 @@ class FlashcardNavigator:
         """Get the count of reviewed items."""
         return sum(1 for item in self.items if item.get('reviewed', False))
     
+    def render_simple_navigation(self) -> None:
+        """Render simple navigation controls without auto-completion logic."""
+        if not self.items:
+            return
+            
+        current_index = self.get_current_index()
+        reviewed_count = self.get_reviewed_count()
+        
+        # Progress bar showing overall progress
+        progress = (current_index + 1) / self.total_items if self.total_items > 0 else 0
+        st.progress(progress, text=f"Card {current_index + 1} of {self.total_items} • {reviewed_count} reviewed")
+        
+        # Navigation controls
+        col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+        
+        with col1:
+            if st.button("⬅️ Previous", disabled=current_index == 0, key=f"simple_prev_{self.session_key}"):
+                self.move_to_previous()
+                st.rerun()
+        
+        with col2:
+            if st.button("➡️ Next", disabled=current_index == self.total_items - 1, key=f"simple_next_{self.session_key}"):
+                self.move_to_next()
+                st.rerun()
+        
+        with col3:
+            st.write(f"**Card {current_index + 1} of {self.total_items}**")
+        
+        with col4:
+            if st.button("🔄 Random", key=f"simple_random_{self.session_key}"):
+                st.session_state[self.session_key] = get_random_index(self.total_items)
+                st.rerun()
+
     def render_navigation(self) -> None:
         """Render the navigation controls."""
         if not self.items:
@@ -264,5 +313,30 @@ class FlashcardNavigator:
             else:
                 # No more unreviewed items, stay at current position
                 return False
+        
+        return False
+    
+    def mark_current_reviewed_and_move_to_next(self, database) -> bool:
+        """
+        Mark current item as reviewed and move to next item (regardless of review status).
+        
+        Args:
+            database: Database instance to mark the paragraph as reviewed
+            
+        Returns:
+            True if successfully moved to next item, False if no more items
+        """
+        current_index = self.get_current_index()
+        current_item = self.get_current_item()
+        
+        if current_item and 'id' in current_item:
+            # Mark current paragraph as reviewed
+            database.mark_paragraph_reviewed(current_item['id'], True)
+            
+            # Update the item in our local list
+            self.items[current_index]['reviewed'] = True
+            
+            # Move to next item
+            return self.move_to_next()
         
         return False

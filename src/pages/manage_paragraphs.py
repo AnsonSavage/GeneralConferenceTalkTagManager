@@ -148,8 +148,8 @@ def _render_flashcard_view(paragraphs, database: BaseDatabaseInterface, filters)
     # Initialize flashcard navigator
     navigator = FlashcardNavigator(paragraphs, "manage_paragraph_index")
     
-    # Render navigation controls
-    navigator.render_enhanced_navigation()
+    # Render simple navigation controls (no auto-completion logic)
+    navigator.render_simple_navigation()
     
     # Get current paragraph
     current_paragraph = navigator.get_current_item()
@@ -163,46 +163,11 @@ def _render_management_flashcard(paragraph: Dict[str, Any], database: BaseDataba
     """Render a single paragraph as a management flashcard."""
     with st.container():
         # Talk information header
-        col1, col2 = st.columns([3, 1])
+        st.markdown(f"### {paragraph['talk_title']}")
+        st.markdown(f"**Speaker:** {paragraph['speaker']} | **Date:** {paragraph['conference_date']} | **Paragraph:** {paragraph['paragraph_number']}")
         
-        with col1:
-            st.markdown(f"### {paragraph['talk_title']}")
-            st.markdown(f"**Speaker:** {paragraph['speaker']} | **Date:** {paragraph['conference_date']} | **Paragraph:** {paragraph['paragraph_number']}")
-            
-            if paragraph['hyperlink']:
-                st.markdown(f"[🔗 View Talk]({paragraph['hyperlink']})")
-        
-        with col2:
-            # Review status and actions
-            current_status = paragraph.get('reviewed', False)
-            
-            # Mark as reviewed button - moves to next unreviewed
-            if not current_status:
-                if st.button(
-                    "✅ Mark Reviewed & Continue",
-                    type="primary",
-                    key=f"mark_reviewed_continue_{paragraph['id']}",
-                    help="Mark this paragraph as reviewed and move to next unreviewed paragraph"
-                ):
-                    moved_to_next = navigator.mark_current_reviewed_and_move_to_next_unreviewed(database)
-                    if moved_to_next:
-                        st.success("Marked as reviewed! Moving to next unreviewed paragraph.")
-                    else:
-                        st.success("Marked as reviewed! No more unreviewed paragraphs.")
-                    st.rerun()
-            
-            # Toggle review status button
-            if st.button(
-                "🔄 Mark Unreviewed" if current_status else "✅ Mark Reviewed",
-                type="secondary",
-                key=f"toggle_review_{paragraph['id']}",
-                help="Toggle review status without moving to next paragraph"
-            ):
-                database.mark_paragraph_reviewed(paragraph['id'], not current_status)
-                # Update the navigator's local data
-                current_index = navigator.get_current_index()
-                navigator.items[current_index]['reviewed'] = not current_status
-                st.rerun()
+        if paragraph['hyperlink']:
+            st.markdown(f"[🔗 View Talk]({paragraph['hyperlink']})")
         
         # Display matched keywords
         display_matched_keywords(paragraph)
@@ -220,66 +185,64 @@ def _render_management_flashcard(paragraph: Dict[str, Any], database: BaseDataba
         st.markdown(content)
         st.markdown("---")
         
-        # Notes management
-        _render_notes_management(paragraph, database)
+        # Simple notes section
+        current_notes = paragraph.get('notes', '') or ''
+        notes_key = f"notes_{paragraph['id']}"
+        
+        # Auto-save notes when they change
+        def save_notes():
+            if notes_key in st.session_state:
+                new_notes = st.session_state[notes_key]
+                if new_notes != current_notes:
+                    database.update_paragraph_notes(paragraph['id'], new_notes)
+        
+        st.text_area(
+            "📝 Notes:",
+            value=current_notes,
+            key=notes_key,
+            height=60,
+            placeholder="Add your notes here...",
+            on_change=save_notes
+        )
         
         # Tags management
         st.markdown("**🏷️ Current Tags:**")
         display_hierarchical_tags_with_indentation(paragraph['id'], database)
         
         # Tag management interface
-        with st.expander("➕ Add/Edit Tags", expanded=False):
-            tag_selector = TagSelector(database, paragraph['id'])
-            
-            tab1, tab2, tab3 = st.tabs(["🔍 Search Tags", "🏷️ Browse All", "➕ Create New"])
-            
-            with tab1:
-                tag_selector.render_enhanced_tag_search("manage_flashcard")
-            
-            with tab2:
-                tag_selector.render_enhanced_all_tags("manage_flashcard")
-            
-            with tab3:
-                tag_selector.render_enhanced_tag_creation("manage_flashcard")
-
-
-def _render_notes_management(paragraph: Dict[str, Any], database: BaseDatabaseInterface) -> None:
-    """Render notes management section."""
-    st.markdown("**📝 Notes:**")
-    
-    current_notes = paragraph.get('notes', '') or ''
-    
-    if current_notes:
-        # Display current notes
-        st.markdown(f"> {current_notes}")
+        st.markdown("**➕ Add Tags:**")
+        tag_selector = TagSelector(database, paragraph['id'])
+        tag_selector.render_enhanced_tag_search("manage_flashcard")
         
-        if st.button("✏️ Edit Notes", key=f"edit_notes_{paragraph['id']}"):
-            st.session_state[f"editing_notes_{paragraph['id']}"] = True
-            st.rerun()
-    else:
-        st.markdown("*No notes added yet.*")
-        if st.button("➕ Add Notes", key=f"add_notes_{paragraph['id']}"):
-            st.session_state[f"editing_notes_{paragraph['id']}"] = True
-            st.rerun()
-    
-    # Notes editing form
-    if st.session_state.get(f"editing_notes_{paragraph['id']}", False):
-        with st.form(f"notes_edit_form_{paragraph['id']}"):
-            notes = st.text_area(
-                "Edit notes:",
-                value=current_notes,
-                height=100
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.form_submit_button("💾 Save", type="primary"):
-                    database.update_paragraph_notes(paragraph['id'], notes)
-                    st.session_state[f"editing_notes_{paragraph['id']}"] = False
-                    st.success("Notes saved!")
-                    st.rerun()
-            
-            with col2:
-                if st.form_submit_button("❌ Cancel"):
-                    st.session_state[f"editing_notes_{paragraph['id']}"] = False
-                    st.rerun()
+        # Completion button - NO auto-navigation
+        st.markdown("---")
+        current_status = paragraph.get('reviewed', False)
+        
+        if not current_status:
+            if st.button(
+                "✅ Mark Complete",
+                type="primary",
+                key=f"mark_complete_{paragraph['id']}",
+                help="Mark this paragraph as reviewed"
+            ):
+                database.mark_paragraph_reviewed(paragraph['id'], True)
+                # Update the navigator's local data
+                current_index = navigator.get_current_index()
+                navigator.items[current_index]['reviewed'] = True
+                # DON'T move to next card - just stay here
+                st.success("Marked as complete!")
+                st.rerun()
+        else:
+            st.success("✅ This paragraph is already marked as complete")
+            if st.button(
+                "🔄 Mark Incomplete",
+                type="secondary",
+                key=f"mark_incomplete_{paragraph['id']}",
+                help="Mark this paragraph as not reviewed"
+            ):
+                database.mark_paragraph_reviewed(paragraph['id'], False)
+                # Update the navigator's local data
+                current_index = navigator.get_current_index()
+                navigator.items[current_index]['reviewed'] = False
+                st.info("Marked as incomplete!")
+                st.rerun()
