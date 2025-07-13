@@ -23,6 +23,7 @@ from src.pages.manage_talks import render_manage_talks_page
 from src.pages.manage_tags import render_manage_tags_page
 from src.pages.manage_keywords import render_manage_keywords_page
 from src.pages.export import render_export_page
+from src.pages.import_data import render_import_page
 from src.pages.summary import render_summary_page
 
 
@@ -174,6 +175,8 @@ def main():
         render_manage_keywords_page(components['database'])
     elif page == "📤 Export":
         render_export_page(components['database'], components['export_manager'])
+    elif page == "📥 Import":
+        render_import_page(components['database'])
     elif page == "📊 Summary":
         render_summary_page(components['database'])
     

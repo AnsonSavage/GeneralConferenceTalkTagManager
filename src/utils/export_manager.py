@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 from ..database.base_database import BaseDatabaseInterface
 from .base_exporter import BaseExporter
 from .markdown_exporter import MarkdownExporter
+from .csv_exporter import CSVExporter
 
 
 class ExportManager:
@@ -76,6 +77,7 @@ class ExportManager:
         return {
             'tags_dict': tags_dict,
             'root_tags': root_tags,
+            'database': self.database,  # Add database reference for CSV export
             'export_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
     
@@ -105,6 +107,19 @@ class ExportManager:
         """
         markdown_exporter = MarkdownExporter()
         return self.export_with_exporter(markdown_exporter, output_file)
+    
+    def export_to_csv(self, output_file: str = None) -> str:
+        """
+        Export database content to CSV format.
+        
+        Args:
+            output_file: Optional file path prefix for CSV files
+            
+        Returns:
+            Summary of the export operation
+        """
+        csv_exporter = CSVExporter()
+        return self.export_with_exporter(csv_exporter, output_file)
     
     def _get_most_specific_tags_for_paragraph(self, paragraph_id: int, tags_dict: Dict) -> List[int]:
         """Get the most specific (leaf) tags for a paragraph"""
