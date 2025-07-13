@@ -3,3 +3,4 @@
 *.pyc
 *.db
 conference_talks.db
+*.md

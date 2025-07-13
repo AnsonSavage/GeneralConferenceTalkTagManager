@@ -16,9 +16,21 @@ def render_export_page(database: BaseDatabaseInterface, export_manager) -> None:
     col1, col2 = st.columns([2, 1])
     
     with col1:
+        # Initialize default filename in session state if not exists
+        if 'export_filename' not in st.session_state:
+            st.session_state.export_filename = f"conference_talks_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        
         # File name input
-        default_filename = f"conference_talks_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-        filename = st.text_input("Export filename:", value=default_filename)
+        filename = st.text_input(
+            "Export filename:", 
+            value=st.session_state.export_filename,
+            key="filename_input",
+            help="Enter your desired filename for the export"
+        )
+        
+        # Update session state when user changes the filename
+        if filename != st.session_state.export_filename:
+            st.session_state.export_filename = filename
         
         # Export location
         export_location = st.selectbox(
