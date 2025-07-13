@@ -105,28 +105,81 @@ def render_import_page(database: BaseDatabaseInterface) -> None:
         # Import preview
         st.markdown("### Import Preview")
         
-        # Show current database stats
-        current_stats = database.get_export_statistics()
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Current Database:**")
-            st.metric("Total Tags", current_stats['total_tags'])
-            st.metric("Total Paragraphs", current_stats['total_paragraphs'])
-            st.metric("Tagged Paragraphs", current_stats['tagged_paragraphs'])
-        
-        with col2:
-            st.markdown("**After Import:**")
+        # Get preview statistics from the CSV files
+        try:
+            preview_stats = _get_import_preview_stats(validation_result['found_files'])
+            
+            # Show current database stats
+            current_stats = database.get_export_statistics()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Current Database:**")
+                st.metric("Total Tags", current_stats['total_tags'])
+                st.metric("Total Paragraphs", current_stats['total_paragraphs'])
+                st.metric("Tagged Paragraphs", current_stats['tagged_paragraphs'])
+            
+            with col2:
+                st.markdown("**Will Import:**")
+                st.metric("Talks", preview_stats.get('talks', 0))
+                st.metric("Paragraphs", preview_stats.get('paragraphs', 0))
+                st.metric("Tags", preview_stats.get('tags', 0))
+                st.metric("Tag Associations", preview_stats.get('paragraph_tags', 0))
+                st.metric("Keywords", preview_stats.get('keywords', 0))
+            
+            # Show import mode explanation
             if merge_mode:
-                st.info("New data will be merged with existing data")
+                st.info("📄 **Merge Mode**: New data will be added to existing data")
                 st.write("• Existing data will be preserved")
                 st.write("• New data will be added")
                 st.write("• Duplicate talks may be skipped")
+                
+                # Calculate estimated totals for merge mode
+                st.markdown("**Estimated Totals After Import:**")
+                est_talks = current_stats['total_talks'] + preview_stats.get('talks', 0)
+                est_paragraphs = current_stats['total_paragraphs'] + preview_stats.get('paragraphs', 0)
+                est_tags = current_stats['total_tags'] + preview_stats.get('tags', 0)
+                
+                st.write(f"• Talks: ~{est_talks} (current + imported)")
+                st.write(f"• Paragraphs: ~{est_paragraphs} (current + imported)")
+                st.write(f"• Tags: ~{est_tags} (current + imported)")
+                st.write("*Note: Exact totals may vary due to duplicate handling*")
             else:
-                st.warning("All existing data will be replaced")
+                st.warning("🗑️ **Replace Mode**: All existing data will be deleted")
                 st.write("• All current data will be deleted")
                 st.write("• Only imported data will remain")
+                
+                # Show final totals for replace mode
+                st.markdown("**Final Totals After Import:**")
+                st.write(f"• Talks: {preview_stats.get('talks', 0)}")
+                st.write(f"• Paragraphs: {preview_stats.get('paragraphs', 0)}")
+                st.write(f"• Tags: {preview_stats.get('tags', 0)}")
+                
+        except Exception as e:
+            st.warning(f"Could not generate import preview: {str(e)}")
+            # Fallback to generic preview
+            current_stats = database.get_export_statistics()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Current Database:**")
+                st.metric("Total Tags", current_stats['total_tags'])
+                st.metric("Total Paragraphs", current_stats['total_paragraphs'])
+                st.metric("Tagged Paragraphs", current_stats['tagged_paragraphs'])
+            
+            with col2:
+                st.markdown("**After Import:**")
+                if merge_mode:
+                    st.info("New data will be merged with existing data")
+                    st.write("• Existing data will be preserved")
+                    st.write("• New data will be added")
+                    st.write("• Duplicate talks may be skipped")
+                else:
+                    st.warning("All existing data will be replaced")
+                    st.write("• All current data will be deleted")
+                    st.write("• Only imported data will remain")
         
         st.markdown("---")
         
@@ -250,3 +303,68 @@ def _cleanup_temp_files(file_paths: List[str]) -> None:
                 os.remove(file_path)
         except Exception:
             pass  # Ignore cleanup errors
+
+
+def _get_import_preview_stats(found_files: dict) -> dict:
+    """
+    Get preview statistics from CSV files to show what will be imported.
+    
+    Args:
+        found_files: Dictionary of found CSV files from validation
+        
+    Returns:
+        Dictionary with counts of items to be imported
+    """
+    import csv
+    
+    stats = {
+        'talks': 0,
+        'paragraphs': 0,
+        'tags': 0,
+        'paragraph_tags': 0,
+        'keywords': 0,
+        'paragraph_keywords': 0
+    }
+    
+    try:
+        # Count talks
+        if found_files.get('talks'):
+            with open(found_files['talks'], 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                stats['talks'] = sum(1 for row in reader)
+        
+        # Count paragraphs
+        if found_files.get('paragraphs'):
+            with open(found_files['paragraphs'], 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                stats['paragraphs'] = sum(1 for row in reader)
+        
+        # Count tags
+        if found_files.get('tags'):
+            with open(found_files['tags'], 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                stats['tags'] = sum(1 for row in reader)
+        
+        # Count paragraph-tag associations
+        if found_files.get('paragraph_tags'):
+            with open(found_files['paragraph_tags'], 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                stats['paragraph_tags'] = sum(1 for row in reader)
+        
+        # Count unique keywords
+        if found_files.get('keywords'):
+            with open(found_files['keywords'], 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                stats['keywords'] = sum(1 for row in reader)
+        
+        # Count paragraph-keyword associations
+        if found_files.get('paragraph_keywords'):
+            with open(found_files['paragraph_keywords'], 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                stats['paragraph_keywords'] = sum(1 for row in reader)
+                
+    except Exception as e:
+        # If there's an error reading any file, return empty stats
+        pass
+    
+    return stats
