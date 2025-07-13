@@ -148,8 +148,8 @@ def _render_flashcard_view(paragraphs, database: BaseDatabaseInterface, filters)
     # Initialize flashcard navigator
     navigator = FlashcardNavigator(paragraphs, "manage_paragraph_index")
     
-    # Render simple navigation controls (no auto-completion logic)
-    navigator.render_simple_navigation()
+    # Render dual navigation system
+    navigator.render_dual_navigation()
     
     # Get current paragraph
     current_paragraph = navigator.get_current_item()

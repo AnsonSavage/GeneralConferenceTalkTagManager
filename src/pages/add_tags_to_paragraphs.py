@@ -11,35 +11,34 @@ from ..database.base_database import BaseDatabaseInterface
 def render_add_tags_page(database: BaseDatabaseInterface) -> None:
     """Render the Add Tags to Paragraphs page with flashcard interface."""
     st.header("📝 Add Tags to Paragraphs")
-    st.markdown("*Quick tagging workflow - Add tags and notes to untagged paragraphs*")
     
     # Store paragraph list in session state to prevent re-querying after tag additions
     if 'add_tags_paragraph_list' not in st.session_state:
-        st.session_state['add_tags_paragraph_list'] = database.get_all_paragraphs_with_filters(untagged_only=True)
+        # Load ALL paragraphs instead of just untagged ones
+        st.session_state['add_tags_paragraph_list'] = database.get_all_paragraphs_with_filters()
     
     paragraphs = st.session_state['add_tags_paragraph_list']
     
     if paragraphs:
-        # Initialize flashcard navigator with the pinned paragraph list
+        # Initialize flashcard navigator with all paragraphs
         navigator = FlashcardNavigator(paragraphs, "add_tags_paragraph_index")
+        
+        
+        st.markdown("---")
         
         # Get current paragraph
         current_paragraph = navigator.get_current_item()
         
         if current_paragraph:
             _render_tagging_flashcard(current_paragraph, database, navigator)
-            
-            # Floating navigation at bottom
-            navigator.render_floating_navigation()
+        
+        # Render dual navigation system at the top
+        navigator.render_dual_navigation()
+
     else:
-        st.success("🎉 All paragraphs have been tagged!")
-        st.info("Great job! All paragraphs in your database now have tags. You can go to 'Manage Paragraphs' to review and edit existing tags.")
+        st.info("No paragraphs found in the database.")
         
-        # Show some stats
-        total_paragraphs = len(database.get_all_paragraphs_with_filters())
-        st.metric("Total Paragraphs", total_paragraphs)
-        
-        # Add button to refresh the list if user wants to start over
+        # Add button to refresh the list
         if st.button("🔄 Refresh List"):
             st.session_state.pop('add_tags_paragraph_list', None)
             st.rerun()

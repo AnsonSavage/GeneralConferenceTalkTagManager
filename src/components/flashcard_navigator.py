@@ -62,6 +62,21 @@ class FlashcardNavigator:
         # No unreviewed items found
         return None
     
+    def get_previous_unreviewed_index(self, current_index: int) -> Optional[int]:
+        """Find the previous unreviewed item index starting from current_index - 1."""
+        # Search backward from current position
+        for i in range(current_index - 1, -1, -1):
+            if not self.items[i].get('reviewed', False):
+                return i
+        
+        # If no unreviewed items found before current position, search from end
+        for i in range(self.total_items - 1, current_index, -1):
+            if not self.items[i].get('reviewed', False):
+                return i
+        
+        # No unreviewed items found
+        return None
+
     def get_reviewed_count(self) -> int:
         """Get the count of reviewed items."""
         return sum(1 for item in self.items if item.get('reviewed', False))
@@ -340,3 +355,159 @@ class FlashcardNavigator:
             return self.move_to_next()
         
         return False
+    
+    def render_dual_navigation(self) -> None:
+        """Render dual navigation system with both sequential and unreviewed-only navigation."""
+        if not self.items:
+            return
+            
+        current_index = self.get_current_index()
+        reviewed_count = self.get_reviewed_count()
+        
+        # Overall progress
+        progress = reviewed_count / self.total_items if self.total_items > 0 else 0
+        st.progress(progress, text=f"Reviewed {reviewed_count} of {self.total_items} paragraphs ({progress:.1%})")
+        
+        # Current position indicator
+        st.markdown(f"**Current Position:** Paragraph {current_index + 1} of {self.total_items}")
+        
+        st.markdown("---")
+        
+        # Dual navigation system
+        st.markdown("### 🧭 Navigation Controls")
+        
+        # Sequential navigation row
+        st.markdown("**📄 Sequential Navigation** (All Paragraphs)")
+        seq_col1, seq_col2, seq_col3, seq_col4 = st.columns([1, 1, 1, 1])
+        
+        with seq_col1:
+            if st.button("⬅️ Previous", disabled=current_index == 0, key=f"seq_prev_{self.session_key}"):
+                self.move_to_previous()
+                st.rerun()
+        
+        with seq_col2:
+            if st.button("➡️ Next", disabled=current_index == self.total_items - 1, key=f"seq_next_{self.session_key}"):
+                self.move_to_next()
+                st.rerun()
+        
+        with seq_col3:
+            if st.button("⏮️ First", key=f"seq_first_{self.session_key}"):
+                st.session_state[self.session_key] = 0
+                st.rerun()
+        
+        with seq_col4:
+            if st.button("⏭️ Last", key=f"seq_last_{self.session_key}"):
+                st.session_state[self.session_key] = self.total_items - 1
+                st.rerun()
+        
+        # Unreviewed navigation row
+        st.markdown("**🔍 Unreviewed Navigation** (Skip Completed)")
+        unrev_col1, unrev_col2, unrev_col3, unrev_col4 = st.columns([1, 1, 1, 1])
+        
+        prev_unreviewed_idx = self.get_previous_unreviewed_index(current_index)
+        next_unreviewed_idx = self.get_next_unreviewed_index(current_index)
+        
+        with unrev_col1:
+            if st.button("⬅️ Prev Unreviewed", disabled=prev_unreviewed_idx is None, key=f"unrev_prev_{self.session_key}"):
+                if prev_unreviewed_idx is not None:
+                    st.session_state[self.session_key] = prev_unreviewed_idx
+                    st.rerun()
+        
+        with unrev_col2:
+            if st.button("➡️ Next Unreviewed", disabled=next_unreviewed_idx is None, key=f"unrev_next_{self.session_key}"):
+                if next_unreviewed_idx is not None:
+                    st.session_state[self.session_key] = next_unreviewed_idx
+                    st.rerun()
+        
+        with unrev_col3:
+            # Find first unreviewed
+            first_unreviewed = None
+            for i, item in enumerate(self.items):
+                if not item.get('reviewed', False):
+                    first_unreviewed = i
+                    break
+            
+            if st.button("⏮️ First Unreviewed", disabled=first_unreviewed is None, key=f"unrev_first_{self.session_key}"):
+                if first_unreviewed is not None:
+                    st.session_state[self.session_key] = first_unreviewed
+                    st.rerun()
+        
+        with unrev_col4:
+            # Find last unreviewed
+            last_unreviewed = None
+            for i in range(self.total_items - 1, -1, -1):
+                if not self.items[i].get('reviewed', False):
+                    last_unreviewed = i
+                    break
+            
+            if st.button("⏭️ Last Unreviewed", disabled=last_unreviewed is None, key=f"unrev_last_{self.session_key}"):
+                if last_unreviewed is not None:
+                    st.session_state[self.session_key] = last_unreviewed
+                    st.rerun()
+        
+        # Additional controls row
+        st.markdown("**⚡ Quick Actions**")
+        quick_col1, quick_col2, quick_col3 = st.columns([1, 1, 2])
+        
+        with quick_col3:
+            # Jump to specific paragraph
+            jump_col1, jump_col2 = st.columns([3, 1])
+            with jump_col1:
+                jump_to = st.number_input(
+                    "Jump to paragraph:", 
+                    min_value=1, 
+                    max_value=self.total_items,
+                    value=current_index + 1, 
+                    key=f"dual_jump_input_{self.session_key}"
+                )
+            with jump_col2:
+                if st.button("Go", key=f"dual_go_{self.session_key}"):
+                    st.session_state[self.session_key] = jump_to - 1
+                    st.rerun()
+        self.render_fragmented_progress_bar()
+
+    def render_fragmented_progress_bar(self) -> None:
+        """Render a fragmented progress bar showing individual paragraph review status."""
+        if not self.items:
+            return
+        
+        current_index = self.get_current_index()
+        
+        # Create visual blocks representing each paragraph
+        blocks = []
+        for i, item in enumerate(self.items):
+            if i == current_index:
+                # Current paragraph - highlighted
+                if item.get('reviewed', False):
+                    blocks.append('🟦')  # Current + reviewed
+                else:
+                    blocks.append('🟨')  # Current + unreviewed
+            else:
+                # Other paragraphs
+                if item.get('reviewed', False):
+                    blocks.append('🟩')  # Reviewed
+                else:
+                    blocks.append('🟥')  # Unreviewed
+        
+        # Group blocks in rows of 50 for better display
+        rows = []
+        row_size = 98
+        for i in range(0, len(blocks), row_size):
+            row = ''.join(blocks[i:i+row_size])
+            rows.append(row)
+        
+        # Display the progress bar
+        st.markdown("**Visual Progress:**")
+        for row in rows:
+            st.markdown(f"`{row}`")
+        
+        # Legend
+        legend_col1, legend_col2, legend_col3, legend_col4 = st.columns(4)
+        with legend_col1:
+            st.markdown("🟩 Reviewed")
+        with legend_col2:
+            st.markdown("🟥 Unreviewed")
+        with legend_col3:
+            st.markdown("🟨 Current")
+        with legend_col4:
+            st.markdown("🟦 Current + Reviewed")
