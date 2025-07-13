@@ -250,7 +250,7 @@ def _render_list_view(paragraphs, database: BaseDatabaseInterface, filters, sear
             if paragraph.get('matched_keywords'):
                 content = highlight_keywords(content, paragraph['matched_keywords'])
             
-            st.markdown(content)
+            st.markdown(content, unsafe_allow_html=True)
             
             # Tags and management
             display_hierarchical_tags_with_indentation(paragraph['id'], database)
@@ -386,7 +386,7 @@ def _render_management_flashcard(paragraph: Dict[str, Any], database: BaseDataba
         elif paragraph.get('matched_keywords'):
             content = highlight_keywords(content, paragraph['matched_keywords'])
         
-        st.markdown(content)
+        st.markdown(content, unsafe_allow_html=True)
         st.markdown("---")
         
         # Enhanced notes section with inline editing
