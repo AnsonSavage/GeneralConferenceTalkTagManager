@@ -57,20 +57,20 @@ class CSVImporter(BaseImporter):
                 validation_result['is_valid'] = False
                 continue
             
-            # Identify file type by name pattern (using endswith for better matching)
+            # Identify file type by name pattern (check more specific patterns first)
             filename = os.path.basename(file_path)
-            if filename.endswith('_talks.csv') or filename == 'talks.csv':
+            if filename.endswith('_paragraph_tags.csv') or filename == 'paragraph_tags.csv':
+                validation_result['found_files']['paragraph_tags'] = file_path
+            elif filename.endswith('_paragraph_keywords.csv') or filename == 'paragraph_keywords.csv':
+                validation_result['found_files']['paragraph_keywords'] = file_path
+            elif filename.endswith('_talks.csv') or filename == 'talks.csv':
                 validation_result['found_files']['talks'] = file_path
             elif filename.endswith('_paragraphs.csv') or filename == 'paragraphs.csv':
                 validation_result['found_files']['paragraphs'] = file_path
             elif filename.endswith('_tags.csv') or filename == 'tags.csv':
                 validation_result['found_files']['tags'] = file_path
-            elif filename.endswith('_paragraph_tags.csv') or filename == 'paragraph_tags.csv':
-                validation_result['found_files']['paragraph_tags'] = file_path
             elif filename.endswith('_keywords.csv') or filename == 'keywords.csv':
                 validation_result['found_files']['keywords'] = file_path
-            elif filename.endswith('_paragraph_keywords.csv') or filename == 'paragraph_keywords.csv':
-                validation_result['found_files']['paragraph_keywords'] = file_path
             elif filename.endswith('_metadata.csv') or filename == 'metadata.csv':
                 validation_result['found_files']['metadata'] = file_path
         
