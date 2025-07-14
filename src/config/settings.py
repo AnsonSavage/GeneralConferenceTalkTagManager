@@ -37,6 +37,7 @@ NAVIGATION_PAGES = [
     "🔤 Manage Keywords",
     "📤 Export",
     "📥 Import",
+    "💾 Backup",
     "📊 Summary"
 ]
 

@@ -2,6 +2,14 @@
 
 A Streamlit application for analyzing and tagging General Conference talks with a clean, service-oriented architecture following single responsibility principles.
 
+## Known issues:
+* The delete backup button doesn't work
+* When a new database is selected, the page router rerouts to the home page
+* if you delete a search term, it won't remove paragraphs that only had that search term
+* It's not very clear ot the user that paragraphs are added to the database via search keywords. This is a bit unintuitive and is kind of specific to our usecase.
+* It's also not certain whether the database will add additional paragraphs if an existing keyword is used in the search
+
+
 ## 📁 Project Structure
 
 ```
