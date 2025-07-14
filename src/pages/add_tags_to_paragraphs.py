@@ -279,6 +279,15 @@ def _render_notes_section(paragraph_id: int, database: BaseDatabaseInterface) ->
     """Render the notes section for the paragraph."""
     # Get current paragraph data to access notes
     paragraph_data = database.get_paragraph_with_notes(paragraph_id)
+    
+    # Handle case where paragraph doesn't exist in database
+    if paragraph_data is None:
+        st.error(f"⚠️ Paragraph with ID {paragraph_id} not found in database. This may indicate a data synchronization issue.")
+        if st.button("🔄 Refresh Paragraph List", key=f"refresh_from_notes_{paragraph_id}"):
+            st.session_state.pop('add_tags_paragraph_list', None)
+            st.rerun()
+        return
+    
     current_notes = paragraph_data.get('notes', '') or ''
     
     with st.form(f"notes_form_{paragraph_id}"):
