@@ -9,10 +9,10 @@ def sanitize_filename(filename):
     """Removes invalid characters from a string so it can be used as a filename."""
     return re.sub(r'[\\/*?:"<>|]', "", filename)
 
-def get_talk_links(conference_url, session_headers):
+def get_talk_links_fallback(conference_url, session_headers, year, month):
     """
-    Fetches the main conference page and extracts links to individual talks
-    by finding list items with the attribute data-content-type="general-conference-talk".
+    Fallback method to extract talk links when the primary method fails.
+    Uses alternative approaches for conferences with different HTML structures.
     """
     try:
         response = requests.get(conference_url, headers=session_headers)
@@ -25,8 +25,67 @@ def get_talk_links(conference_url, session_headers):
     talk_links = set()
     base_domain = "https://www.churchofjesuschrist.org"
 
-    # Find all list items specifically marked as a "general-conference-talk"
-    # as per your excellent suggestion. This is a very reliable selector.
+    # Method 1: Look for direct talk links in conference path
+    pattern = f"/study/general-conference/{year}/{month}/"
+    all_links = soup.find_all('a', href=True)
+    
+    for link in all_links:
+        href = link.get('href', '')
+        # Check for direct talk links - these have the conference pattern but aren't session pages
+        if (pattern in href and 
+            not href.endswith(f"/{month}") and  # not the main conference page
+            not href.endswith(f"/{month}/") and
+            not href.endswith(f"/{month}?lang=eng") and  # not the main conference page with lang
+            '?lang=eng' in href and  # talks typically have lang parameter
+            '-session' not in href and  # exclude session pages
+            href != conference_url):  # not the same as the conference URL
+            full_url = f"{base_domain}{href}" if href.startswith('/') else href
+            talk_links.add(full_url)
+    
+    if talk_links:
+        print(f"  Fallback method found {len(talk_links)} talk links using direct link pattern")
+        return list(talk_links)
+    
+    # Method 2: Look for links with specific patterns that indicate talks
+    # Some conferences use numbered or speaker-name based URLs
+    for link in all_links:
+        href = link.get('href', '')
+        link_text = link.get_text(strip=True)
+        
+        # Check for patterns like /2024/10/12andersen or /2017/04/trust-in-the-lord-and-lean-not
+        if (f"/general-conference/{year}/{month}/" in href and
+            len(href.split('/')) >= 6 and  # has enough path components
+            not any(exclude in href for exclude in ['-session', f'/{month}?', f'/{month}/', 'contents']) and
+            ('?lang=eng' in href or not '?' in href)):  # either has lang param or no params
+            
+            # Additional check: make sure it's not a session page and has some content
+            if link_text and len(link_text) > 10:  # talks usually have descriptive text
+                full_url = f"{base_domain}{href}" if href.startswith('/') else href
+                talk_links.add(full_url)
+    
+    if talk_links:
+        print(f"  Fallback method found {len(talk_links)} talk links using extended pattern matching")
+    
+    return list(talk_links)
+
+def get_talk_links(conference_url, session_headers):
+    """
+    Fetches the main conference page and extracts links to individual talks
+    by finding list items with the attribute data-content-type="general-conference-talk".
+    If that fails, uses fallback methods for conferences with different structures.
+    """
+    try:
+        response = requests.get(conference_url, headers=session_headers)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching conference page {conference_url}: {e}")
+        return []
+
+    soup = BeautifulSoup(response.content, 'html.parser')
+    talk_links = set()
+    base_domain = "https://www.churchofjesuschrist.org"
+
+    # Primary method: Find all list items specifically marked as a "general-conference-talk"
     talk_list_items = soup.select('li[data-content-type="general-conference-talk"]')
 
     for item in talk_list_items:
@@ -38,7 +97,21 @@ def get_talk_links(conference_url, session_headers):
             full_url = f"{base_domain}{href}"
             talk_links.add(full_url)
 
-    return list(talk_links)
+    if talk_links:
+        return list(talk_links)
+    
+    # If primary method failed, try fallback methods
+    print(f"  Primary method found no talks, trying fallback methods...")
+    
+    # Extract year and month from URL for fallback
+    url_parts = conference_url.split('/')
+    year = url_parts[-2] if len(url_parts) >= 2 else None
+    month = url_parts[-1].split('?')[0] if len(url_parts) >= 1 else None
+    
+    if year and month:
+        return get_talk_links_fallback(conference_url, session_headers, year, month)
+    
+    return []
 
 def get_talk_text(talk_url, session_headers):
     """
@@ -95,6 +168,13 @@ def main():
     
     args = parser.parse_args()
 
+    # Initialize failure tracking
+    failed_conferences = []
+    failed_talks = []
+    total_conferences = 0
+    total_talks_processed = 0
+    total_talks_saved = 0
+
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
@@ -123,13 +203,20 @@ def main():
             if year == current_year and int(month) > datetime.now().month and month_str == 'April':
                  continue
 
-            print(f"--- Processing {year} {month_str} Conference ---")
+            total_conferences += 1
+            conference_name = f"{year} {month_str}"
+            print(f"--- Processing {conference_name} Conference ---")
             print(f"Fetching from: {conference_url}")
 
             talk_links = get_talk_links(conference_url, headers)
 
             if not talk_links:
                 print(f"No talks found for this conference.")
+                failed_conferences.append({
+                    'conference': conference_name,
+                    'url': conference_url,
+                    'reason': 'No talks found'
+                })
                 print("-" * 20)
                 continue
 
@@ -138,7 +225,9 @@ def main():
             os.makedirs(month_dir, exist_ok=True)
 
             print(f"Found {len(talk_links)} talks.")
+            conference_talk_count = 0
             for link in sorted(talk_links): # Sorting makes the output more predictable
+                total_talks_processed += 1
                 title, speaker, text = get_talk_text(link, headers)
                 if title and speaker and text:
                     safe_speaker = sanitize_filename(speaker)
@@ -151,13 +240,62 @@ def main():
                             f.write(f"URL: {link}\n\n")
                             f.write(text)
                         print(f"  Successfully saved: {safe_speaker}_{safe_title}.txt")
+                        total_talks_saved += 1
+                        conference_talk_count += 1
                     except IOError as e:
                         print(f"  Error saving file {filename}: {e}")
+                        failed_talks.append({
+                            'conference': conference_name,
+                            'url': link,
+                            'title': title,
+                            'speaker': speaker,
+                            'reason': f'File save error: {e}'
+                        })
                 else:
                     print(f"  Could not process talk: {link}")
+                    failed_talks.append({
+                        'conference': conference_name,
+                        'url': link,
+                        'title': title or 'Unknown',
+                        'speaker': speaker or 'Unknown',
+                        'reason': 'Could not extract talk content'
+                    })
+            
+            # Check if no talks were successfully saved for this conference
+            if conference_talk_count == 0 and talk_links:
+                failed_conferences.append({
+                    'conference': conference_name,
+                    'url': conference_url,
+                    'reason': f'Found {len(talk_links)} talk links but could not save any talks'
+                })
+            
             print("-" * 20)
 
-    print("\n✅ --- Download complete! ---")
+    # Report summary and failures
+    print(f"\n📊 --- DOWNLOAD SUMMARY ---")
+    print(f"Total conferences processed: {total_conferences}")
+    print(f"Total talks processed: {total_talks_processed}")
+    print(f"Total talks successfully saved: {total_talks_saved}")
+    print(f"Failed conferences: {len(failed_conferences)}")
+    print(f"Failed individual talks: {len(failed_talks)}")
+
+    if failed_conferences:
+        print(f"\n❌ --- FAILED CONFERENCES ---")
+        for failure in failed_conferences:
+            print(f"  • {failure['conference']}: {failure['reason']}")
+            print(f"    URL: {failure['url']}")
+
+    if failed_talks:
+        print(f"\n❌ --- FAILED TALKS ---")
+        for failure in failed_talks:
+            print(f"  • {failure['conference']} - {failure['speaker']}: {failure['title']}")
+            print(f"    Reason: {failure['reason']}")
+            print(f"    URL: {failure['url']}")
+
+    if not failed_conferences and not failed_talks:
+        print(f"\n✅ --- All downloads completed successfully! ---")
+    else:
+        print(f"\n⚠️  --- Download completed with {len(failed_conferences)} failed conferences and {len(failed_talks)} failed talks ---")
 
 if __name__ == "__main__":
     main()
