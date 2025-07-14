@@ -35,12 +35,20 @@ def render_backup_page(database: BaseDatabaseInterface, backup_manager: BackupMa
             st.caption(f"Database size: {size_str}")
         else:
             st.warning("Database file not found!")
+        
+        # Memo textbox for backup
+        backup_memo = st.text_input(
+            "Backup memo (optional):",
+            placeholder="e.g., before adding keyword 'tech'",
+            help="Add a descriptive memo to help identify this backup",
+            key="backup_page_memo"
+        )
     
     with col2:
         if st.button("💾 Save a Backup", type="primary", help="Create a timestamped backup of the current database"):
             if os.path.exists(current_db):
                 with st.spinner("Creating backup..."):
-                    backup_results = backup_manager.create_backup(current_db)
+                    backup_results = backup_manager.create_backup(current_db, backup_memo)
                 
                 if backup_results['success']:
                     st.success("✅ Backup created successfully!")
@@ -48,6 +56,8 @@ def render_backup_page(database: BaseDatabaseInterface, backup_manager: BackupMa
                     # Show backup details
                     st.write("**Backup Details:**")
                     st.write(f"- **Timestamp:** {backup_results['timestamp']}")
+                    if backup_results.get('memo'):
+                        st.write(f"- **Memo:** {backup_results['memo']}")
                     st.write(f"- **Backup Directory:** `{backup_results['backup_dir']}`")
                     st.write(f"- **Files Created:** {len(backup_results['files_created'])}")
                     

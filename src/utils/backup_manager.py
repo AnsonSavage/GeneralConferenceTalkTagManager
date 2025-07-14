@@ -23,12 +23,13 @@ class BackupManager:
         self.database = database
         self.export_manager = ExportManager(database)
     
-    def create_backup(self, db_path: str) -> Dict[str, Any]:
+    def create_backup(self, db_path: str, memo: str = None) -> Dict[str, Any]:
         """
         Create a timestamped backup of the database and CSV exports.
         
         Args:
             db_path: Path to the database file to backup
+            memo: Optional memo to prefix the backup directory name
             
         Returns:
             Dictionary containing backup results and file paths
@@ -36,12 +37,24 @@ class BackupManager:
         # Generate timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
+        # Create backup directory name with optional memo prefix
+        if memo and memo.strip():
+            # Clean memo for safe directory name
+            clean_memo = "".join(c for c in memo.strip() if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            clean_memo = clean_memo.replace(' ', '_')
+            if clean_memo:
+                backup_dir_name = f"{clean_memo}_{timestamp}"
+            else:
+                backup_dir_name = timestamp
+        else:
+            backup_dir_name = timestamp
+        
         # Extract database name (without extension)
         db_name = Path(db_path).stem
         
         # Create backup directory structure
         backup_base_dir = Path("backups")
-        backup_timestamp_dir = backup_base_dir / timestamp
+        backup_timestamp_dir = backup_base_dir / backup_dir_name
         csv_dir = backup_timestamp_dir / "csv_files"
         
         # Create directories
@@ -49,11 +62,12 @@ class BackupManager:
         csv_dir.mkdir(exist_ok=True)
         
         backup_results = {
-            'timestamp': timestamp,
+            'timestamp': backup_dir_name,  # Use the full directory name including memo
             'backup_dir': str(backup_timestamp_dir),
             'csv_dir': str(csv_dir),
             'files_created': [],
-            'errors': []
+            'errors': [],
+            'memo': memo if memo and memo.strip() else None
         }
         
         try:

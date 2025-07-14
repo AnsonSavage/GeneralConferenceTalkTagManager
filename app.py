@@ -117,6 +117,18 @@ def render_database_selector():
             size_str = f"{file_size / (1024 * 1024):.1f} MB"
         st.sidebar.caption(f"Size: {size_str}")
     
+    # Quick backup section
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 💾 Quick Backup")
+    
+    # Memo textbox for backup
+    backup_memo = st.sidebar.text_input(
+        "Backup memo (optional):",
+        placeholder="e.g., before adding keyword 'tech'",
+        help="Add a descriptive memo to help identify this backup",
+        key="backup_memo"
+    )
+    
     # Quick backup button
     if st.sidebar.button("💾 Quick Backup", help="Create a backup of the current database"):
         if os.path.exists(current_db):
@@ -125,10 +137,12 @@ def render_database_selector():
             backup_manager = components['backup_manager']
             
             with st.spinner("Creating backup..."):
-                backup_results = backup_manager.create_backup(current_db)
+                backup_results = backup_manager.create_backup(current_db, backup_memo)
             
             if backup_results['success']:
                 st.sidebar.success("✅ Backup created!")
+                if backup_results.get('memo'):
+                    st.sidebar.info(f"📝 Memo: {backup_results['memo']}")
                 st.sidebar.info(f"📁 {backup_results['timestamp']}")
             else:
                 st.sidebar.error("❌ Backup failed!")
