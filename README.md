@@ -247,3 +247,89 @@ All application settings are centralized in `src/config/settings.py`:
 ✅ **Dependency Inversion**: UI depends on abstractions, not concrete implementations  
 ✅ **Open/Closed**: Easy to extend without modifying existing code  
 ✅ **Interface Segregation**: Clean, focused interfaces between components
+
+## 🧪 Testing
+
+The project includes a comprehensive test suite with both unit and integration tests that verify the application's core functionality.
+
+### Running Tests
+
+```bash
+# Run all tests (recommended)
+python run_tests.py --all
+
+# Run only unit tests
+python run_tests.py --unit
+
+# Run only integration tests
+python run_tests.py --integration
+```
+
+### Test Structure
+
+```
+tests/
+├── unit/                           # Unit tests for individual components
+│   ├── test_csv_basic.py              # CSV functionality tests
+│   └── test_csv_import_export.py      # Database operations tests
+├── integration/                    # Integration tests for complete workflows
+│   ├── test_standalone_workflow.py    # End-to-end application workflow test
+│   └── test_database_merge.py         # Database merging functionality test
+└── dummy_data/                     # Test data for integration tests
+    └── General_Conference_Talks/      # Sample conference talks from 2001, 2024-2025
+```
+
+### Integration Test Details
+
+#### Simple Workflow Integration Test
+Tests the core application workflow that users follow:
+
+1. **🔍 Keyword Search**: Searches dummy conference talks for specific keywords (`faith`, `Christ`, `testimony`)
+2. **📥 Selective Import**: Only imports talks and paragraphs containing the search keywords (mirrors real user behavior)
+3. **🏷️ Tagging**: Creates meaningful tags and applies them to relevant paragraphs based on content
+4. **📤 Export Testing**: Validates markdown export functionality
+5. **✅ Verification**: Confirms all data is properly stored and accessible
+
+**Expected Results**: ~237 talks, ~2,265 paragraphs containing keywords
+
+#### Database Merge Integration Test
+Tests the scenario where two separate databases need to be merged:
+
+1. **📊 Data Splitting**: Divides dummy data into two subsets by year (2001 vs 2024-2025)
+2. **🔍 Keyword Filtering**: Each database searches for keywords (`faith`, `Christ`) in its subset
+3. **📤 CSV Export**: Exports both databases to CSV format
+4. **📥 Merge Import**: Imports both CSV sets into a new merged database
+5. **✅ Verification**: Confirms all data from both sources is preserved with proper deduplication
+
+**Expected Results**: Successfully merged database with all talks, paragraphs, and tags from both sources
+
+### Test Results
+
+When tests pass, you'll see output like:
+```
+🎉 ALL TESTS PASSED!
+✅ Unit Tests: 9 tests passed
+✅ Integration Tests: 2 tests passed
+```
+
+### Development Testing
+
+For development and debugging, you can run individual test files:
+
+```bash
+# Run specific unit test
+python -m pytest tests/unit/test_csv_basic.py -v
+
+# Run integration test directly
+python tests/integration/test_standalone_workflow.py
+python tests/integration/test_database_merge.py
+```
+
+### Test Data
+
+The integration tests use a subset of dummy conference talk data located in `tests/dummy_data/General_Conference_Talks/`. This data includes:
+- Sample talks from 2001, 2024, and 2025
+- Realistic talk structure with titles, speakers, and content
+- Content containing the test keywords used in integration tests
+
+---
