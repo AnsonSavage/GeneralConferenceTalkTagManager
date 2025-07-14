@@ -59,6 +59,7 @@ def get_talk_text(talk_url, session_headers):
 
     speaker_element = soup.find('p', class_='author-name')
     speaker = speaker_element.get_text(strip=True) if speaker_element else "No Speaker Found"
+    speaker = speaker.replace('By ', '')  # Remove "By " prefix if it exists
 
     body_element = soup.find('div', class_='body-block')
     if not body_element:
@@ -84,7 +85,7 @@ def main():
     """
     Main function to orchestrate the downloading and saving of talks.
     """
-    parser = argparse.ArgumentParser(description='Download LDS General Conference talks')
+    parser = argparse.ArgumentParser(description='Download General Conference talks of the Church of Jesus Christ of Latter-day Saints')
     parser.add_argument('--start-year', type=int, default=2000, 
                        help='Starting year for downloading talks (default: 2000)')
     parser.add_argument('--end-year', type=int, default=datetime.now().year,
@@ -100,6 +101,12 @@ def main():
     base_url = "https://www.churchofjesuschrist.org/study/general-conference"
     start_year = args.start_year
     current_year = datetime.now().year
+    if (args.end_year < start_year):
+        print(f"Error: end_year ({args.end_year}) cannot be less than start_year ({start_year}).")
+        return
+    # Ensure end_year does not exceed the current year
+    if args.end_year > current_year:
+        print(f"Warning: end_year ({args.end_year}) is greater than the current year ({current_year}). Setting end_year to {current_year}.")
     end_year = min(args.end_year, current_year)  # Don't go beyond current year
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)

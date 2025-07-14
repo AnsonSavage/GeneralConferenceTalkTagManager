@@ -6,3 +6,4 @@ conference_talks.db
 test_01*.md
 *.csv
 conference_talks_export_20250712_180030_summary.txt
+*.txt
