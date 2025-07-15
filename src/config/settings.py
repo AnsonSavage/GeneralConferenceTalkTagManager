@@ -36,6 +36,8 @@ NAVIGATION_PAGES = [
     "🏷️ Manage Tags",
     "🔤 Manage Keywords",
     "📤 Export",
+    "📥 Import",
+    "💾 Backup",
     "📊 Summary"
 ]
 
@@ -45,5 +47,6 @@ SIDEBAR_TIPS = [
     "• Only matching paragraphs are stored in database",
     "• Use specific keywords for better results",
     "• Create hierarchical tags for better organization",
-    "• Review paragraphs to track progress"
+    "• Review paragraphs to track progress",
+    "• Export/Import for backup and data sharing"
 ]

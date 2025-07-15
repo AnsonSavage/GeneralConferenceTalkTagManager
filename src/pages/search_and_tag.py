@@ -2,11 +2,12 @@
 Search and Tag page module.
 """
 import streamlit as st
-from typing import List, Dict, Any
+from typing import Dict, Any
 from ..utils.helpers import highlight_keywords, parse_keywords, display_talk_info, clear_session_state_key
+from ..database.base_database import BaseDatabaseInterface
 
 
-def render_search_and_tag_page(db) -> None:
+def render_search_and_tag_page(database: BaseDatabaseInterface, search_manager) -> None:
     """Render the Search and Tag page."""
     st.header("Search and Tag Paragraphs")
     
@@ -15,7 +16,7 @@ def render_search_and_tag_page(db) -> None:
     
     with col1:
         # Get existing keywords for suggestions
-        existing_keywords = db.get_keywords()
+        existing_keywords = database.get_keywords()
         
         # Text input for keywords
         keywords_input = st.text_input(
@@ -39,7 +40,7 @@ def render_search_and_tag_page(db) -> None:
         
         # Search files and populate database with matching content
         with st.spinner("Scanning files for keywords..."):
-            results = db.search_and_populate_database(keywords, match_whole_words=match_whole_words)
+            results = search_manager.search_and_populate_database(keywords, match_whole_words=match_whole_words)
         
         st.success(f"Found {len(results)} paragraphs matching your keywords")
         
@@ -52,15 +53,15 @@ def render_search_and_tag_page(db) -> None:
         st.header("Search Results")
         
         # Get all tags for tagging interface
-        all_tags = db.get_all_tags()
+        all_tags = database.get_all_tags()
         tag_options = {tag['name']: tag['id'] for tag in all_tags}
         
         # Display each paragraph
         for i, result in enumerate(st.session_state.search_results):
-            _render_search_result(result, db, tag_options, i)
+            _render_search_result(result, database, tag_options, i)
 
 
-def _render_search_result(result: Dict[str, Any], db, tag_options: Dict[str, int], index: int) -> None:
+def _render_search_result(result: Dict[str, Any], database: BaseDatabaseInterface, tag_options: Dict[str, int], index: int) -> None:
     """Render a single search result."""
     with st.expander(f"**{result['talk_title']}** - {result['speaker']} ({result['conference_date']}) - Para {result['paragraph_number']}", expanded=True):
         
@@ -79,7 +80,7 @@ def _render_search_result(result: Dict[str, Any], db, tag_options: Dict[str, int
             )
             
             if reviewed != result['reviewed']:
-                db.mark_paragraph_reviewed(result['id'], reviewed)
+                database.mark_paragraph_reviewed(result['id'], reviewed)
                 st.rerun()
         
         # Paragraph content
@@ -90,14 +91,14 @@ def _render_search_result(result: Dict[str, Any], db, tag_options: Dict[str, int
         st.markdown(content)
         
         # Current tags
-        current_tags = db.get_paragraph_tags(result['id'])
+        current_tags = database.get_paragraph_tags(result['id'])
         if current_tags:
             st.markdown("**Current Tags:**")
             tag_cols = st.columns(len(current_tags))
             for j, tag in enumerate(current_tags):
                 with tag_cols[j]:
                     if st.button(f"❌ {tag['name']}", key=f"remove_tag_{result['id']}_{tag['id']}"):
-                        db.remove_tag_from_paragraph(result['id'], tag['id'])
+                        database.remove_tag_from_paragraph(result['id'], tag['id'])
                         st.rerun()
         
         # Add new tags
@@ -116,7 +117,7 @@ def _render_search_result(result: Dict[str, Any], db, tag_options: Dict[str, int
         
         with col2:
             if selected_tag and st.button("Add Tag", key=f"add_tag_{result['id']}"):
-                db.tag_paragraph(result['id'], tag_options[selected_tag])
+                database.tag_paragraph(result['id'], tag_options[selected_tag])
                 # Clear the selection
                 clear_session_state_key(f"tag_select_{result['id']}")
                 st.success(f"Tag '{selected_tag}' added!")

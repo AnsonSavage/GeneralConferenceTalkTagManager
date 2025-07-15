@@ -2,7 +2,7 @@
 Database module initialization.
 """
 from .base_database import BaseDatabaseInterface
-from .conference_talks_db import SQLiteConferenceTalksDB
+from .sqlite_database import SQLiteConferenceTalksDB
 from .database_factory import DatabaseFactory, get_database
 
 # For backward compatibility

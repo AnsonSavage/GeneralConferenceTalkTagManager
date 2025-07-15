@@ -5,28 +5,28 @@ import streamlit as st
 from typing import List, Dict, Any, Optional
 
 
-def render_manage_tags_page(db) -> None:
+def render_manage_tags_page(database) -> None:
     """Render the Manage Tags page."""
     st.header("Manage Tags")
     
     # Add new tag section
-    _render_add_tag_section(db)
+    _render_add_tag_section(database)
     
     # Display existing tags
     st.subheader("Existing Tags")
-    tags = db.get_all_tags()
+    tags = database.get_all_tags()
     
     if tags:
         # Check if we're editing a tag
         if 'editing_tag' in st.session_state:
-            _render_tag_edit_form(db, tags)
+            _render_tag_edit_form(database, tags)
         else:
             _render_tags_list(tags)
     else:
         st.info("No tags created yet.")
 
 
-def _render_add_tag_section(db) -> None:
+def _render_add_tag_section(database) -> None:
     """Render the add new tag section."""
     # Clear form fields if flag is set
     if st.session_state.get("add_tag_clear", False):
@@ -45,7 +45,7 @@ def _render_add_tag_section(db) -> None:
             
             with col2:
                 # Parent tag selection
-                all_tags = db.get_all_tags()
+                all_tags = database.get_all_tags()
                 parent_options = {tag['name']: tag['id'] for tag in all_tags}
                 
                 parent_tag = st.selectbox(
@@ -59,7 +59,7 @@ def _render_add_tag_section(db) -> None:
             if submitted and tag_name:
                 try:
                     parent_id = parent_options[parent_tag] if parent_tag else None
-                    tag_id = db.add_tag(tag_name, tag_description, parent_id)
+                    tag_id = database.add_tag(tag_name, tag_description, parent_id)
                     st.success(f"Tag '{tag_name}' added with ID: {tag_id}")
                     st.session_state["add_tag_clear"] = True
                     st.rerun()
@@ -67,7 +67,7 @@ def _render_add_tag_section(db) -> None:
                     st.error(str(e))
 
 
-def _render_tag_edit_form(db, tags: List[Dict[str, Any]]) -> None:
+def _render_tag_edit_form(database, tags: List[Dict[str, Any]]) -> None:
     """Render the tag editing form."""
     tag_to_edit = next((tag for tag in tags if tag['id'] == st.session_state.editing_tag), None)
     
@@ -76,7 +76,7 @@ def _render_tag_edit_form(db, tags: List[Dict[str, Any]]) -> None:
         
         # Check if we're in deletion confirmation mode
         if st.session_state.get(f"confirm_delete_{tag_to_edit['id']}", False):
-            _render_tag_deletion_confirmation(db, tag_to_edit)
+            _render_tag_deletion_confirmation(database, tag_to_edit)
             return
         
         with st.form("edit_tag_form"):
@@ -88,7 +88,7 @@ def _render_tag_edit_form(db, tags: List[Dict[str, Any]]) -> None:
             
             with col2:
                 # Parent tag selection (exclude circular references)
-                parent_options = _get_valid_parent_options(db, tags, tag_to_edit['id'])
+                parent_options = _get_valid_parent_options(database, tags, tag_to_edit['id'])
                 current_parent = _get_current_parent_name(tags, tag_to_edit['parent_tag_id'])
                 
                 parent_index = 0
@@ -112,7 +112,7 @@ def _render_tag_edit_form(db, tags: List[Dict[str, Any]]) -> None:
                 cancel_edit = st.form_submit_button("Cancel")
             
             if update_submitted:
-                _handle_tag_update(db, parent_options, tag_to_edit['id'], new_name, new_description, new_parent)
+                _handle_tag_update(database, parent_options, tag_to_edit['id'], new_name, new_description, new_parent)
             
             if delete_submitted:
                 # Set flag to show confirmation dialog
@@ -124,10 +124,10 @@ def _render_tag_edit_form(db, tags: List[Dict[str, Any]]) -> None:
                 st.rerun()
 
 
-def _render_tag_deletion_confirmation(db, tag_to_edit: Dict[str, Any]) -> None:
+def _render_tag_deletion_confirmation(database, tag_to_edit: Dict[str, Any]) -> None:
     """Render tag deletion confirmation dialog outside of form."""
     # Check if tag has any paragraphs using the abstract method
-    paragraph_count = db.get_paragraph_count_for_tag(tag_to_edit['id'])
+    paragraph_count = database.get_paragraph_count_for_tag(tag_to_edit['id'])
     
     if paragraph_count > 0:
         # Show confirmation dialog
@@ -145,14 +145,14 @@ def _render_tag_deletion_confirmation(db, tag_to_edit: Dict[str, Any]) -> None:
         if st.button("🗑️ Yes, Delete Tag", type="primary", key="confirm_delete"):
             if paragraph_count > 0:
                 # Remove tag from all paragraphs first using the abstract method
-                affected_count = db.remove_tag_from_all_paragraphs(tag_to_edit['id'])
+                affected_count = database.remove_tag_from_all_paragraphs(tag_to_edit['id'])
                 
                 # Then delete the tag
-                db.delete_tag(tag_to_edit['id'])
+                database.delete_tag(tag_to_edit['id'])
                 st.success(f"✅ Tag '{tag_to_edit['name']}' deleted successfully and removed from {affected_count} paragraph(s)!")
             else:
                 # No paragraphs assigned, safe to delete directly
-                db.delete_tag(tag_to_edit['id'])
+                database.delete_tag(tag_to_edit['id'])
                 st.success(f"✅ Tag '{tag_to_edit['name']}' deleted successfully!")
             
             # Clean up session state
@@ -238,13 +238,13 @@ def _render_tags_list(tags: List[Dict[str, Any]]) -> None:
             st.divider()
 
 
-def _get_valid_parent_options(db, tags: List[Dict[str, Any]], tag_id: int) -> Dict[str, int]:
+def _get_valid_parent_options(database, tags: List[Dict[str, Any]], tag_id: int) -> Dict[str, int]:
     """Get valid parent options excluding circular references."""
     parent_options = {}
     for tag in tags:
         if tag['id'] != tag_id:
             # Don't allow circular references
-            hierarchy = db.get_tag_hierarchy(tag['id'])
+            hierarchy = database.get_tag_hierarchy(tag['id'])
             if tag_id not in hierarchy:
                 parent_options[tag['name']] = tag['id']
     return parent_options
@@ -259,12 +259,12 @@ def _get_current_parent_name(tags: List[Dict[str, Any]], parent_tag_id: Optional
     return None
 
 
-def _handle_tag_update(db, parent_options: Dict[str, int], tag_id: int, 
+def _handle_tag_update(database, parent_options: Dict[str, int], tag_id: int, 
                       new_name: str, new_description: str, new_parent: str) -> None:
     """Handle tag update."""
     try:
         new_parent_id = parent_options[new_parent] if new_parent else None
-        db.update_tag(tag_id, new_name, new_description, new_parent_id)
+        database.update_tag(tag_id, new_name, new_description, new_parent_id)
         st.success(f"Tag '{new_name}' updated successfully!")
         del st.session_state.editing_tag
         st.rerun()

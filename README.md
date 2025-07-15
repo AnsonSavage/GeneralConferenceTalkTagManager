@@ -1,6 +1,14 @@
-# Conference Talks Analysis - Modular Architecture
+# Conference Talks Analysis - Service-Oriented Architecture
 
-A Streamlit application for analyzing and tagging General Conference talks with a clean, modular codebase.
+A Streamlit application for analyzing and tagging General Conference talks with a clean, service-oriented architecture following single responsibility principles.
+
+## Known issues:
+* The delete backup button doesn't work
+* When a new database is selected, the page router rerouts to the home page
+* if you delete a search term, it won't remove paragraphs that only had that search term
+* It's not very clear ot the user that paragraphs are added to the database via search keywords. This is a bit unintuitive and is kind of specific to our usecase.
+* It's also not certain whether the database will add additional paragraphs if an existing keyword is used in the search
+
 
 ## 📁 Project Structure
 
@@ -14,24 +22,33 @@ GeneralConferenceTalkTagManager/
 │   ├── config/              # Configuration settings
 │   │   ├── __init__.py
 │   │   └── settings.py      # App settings and constants
-│   ├── database/            # Database layer
+│   ├── database/            # Database layer (Pure CRUD operations)
 │   │   ├── __init__.py
-│   │   └── conference_talks_db.py  # Database operations
+│   │   ├── base_database.py        # Database interface definition
+│   │   ├── conference_talks_db.py  # SQLite implementation
+│   │   └── database_factory.py     # Database factory pattern
+│   ├── services/            # Service layer (Business logic orchestration)
+│   │   ├── __init__.py
+│   │   └── conference_talks_service.py # Main service coordinator
+│   ├── utils/               # Helper classes (Specialized responsibilities)
+│   │   ├── __init__.py
+│   │   ├── file_parser.py           # File parsing operations
+│   │   ├── text_processor.py        # Text processing operations
+│   │   ├── search_manager.py        # Search and population workflows
+│   │   ├── export_manager.py        # Export functionality
+│   │   └── helpers.py               # Common utility functions
 │   ├── components/          # Reusable UI components
 │   │   ├── __init__.py
 │   │   └── ui_components.py # Flashcard navigator, tag selector, etc.
-│   ├── pages/               # Individual page modules
-│   │   ├── search_and_tag.py       # Search & Tag page
-│   │   ├── manage_paragraphs.py    # Flashcard interface
-│   │   ├── manage_talks.py         # Talks overview
-│   │   ├── manage_tags.py          # Tag management
-│   │   ├── manage_keywords.py      # Keyword management
-│   │   ├── add_tags_to_paragraphs.py # Tagging utility
-│   │   ├── export.py               # Export functionality
-│   │   └── summary.py              # Project summary
-│   └── utils/               # Utility functions
-│       ├── __init__.py
-│       └── helpers.py       # Common helper functions
+│   └── pages/               # Individual page modules
+│       ├── search_and_tag.py       # Search & Tag page
+│       ├── manage_paragraphs.py    # Flashcard interface
+│       ├── manage_talks.py         # Talks overview
+│       ├── manage_tags.py          # Tag management
+│       ├── manage_keywords.py      # Keyword management
+│       ├── add_tags_to_paragraphs.py # Tagging utility
+│       ├── export.py               # Export functionality
+│       └── summary.py              # Project summary
 └── utilities/               # External utilities
     └── general_conference_talk_scraper.py
 ```
@@ -43,131 +60,183 @@ Run the main application:
 streamlit run app.py
 ```
 
-## 🏗️ Architecture Benefits
+## 🏗️ Service-Oriented Architecture
 
-### **Separation of Concerns**
-- **Pages**: Each page is self-contained with its own module
-- **Components**: Reusable UI components (flashcard navigation, tag selectors)
-- **Database**: Isolated database operations
-- **Utils**: Common helper functions
-- **Config**: Centralized configuration management
+### **Single Responsibility Principle**
+Each component has one clear, focused responsibility:
 
-### **Maintainability**
-- **Single Responsibility**: Each file has a clear, focused purpose
-- **Easy Testing**: Individual modules can be tested in isolation
-- **Code Reuse**: Components and utilities are shared across pages
-- **Configuration Management**: All settings in one place
+#### **Database Layer** (`src/database/`)
+- **Pure CRUD operations only**
+- **`base_database.py`**: Clean interface definition
+- **`conference_talks_db.py`**: SQLite implementation (database operations only)
+- **`database_factory.py`**: Factory pattern for database creation
 
-### **Scalability**
-- **Easy to Add Features**: New pages are simple to add
-- **Component Library**: Build up reusable UI components
-- **Plugin Architecture**: Easy to extend functionality
+#### **Helper Classes** (`src/utils/`)
+- **`file_parser.py`**: Handles parsing conference talk text files
+- **`text_processor.py`**: Manages text processing (paragraph splitting, keyword matching)
+- **`search_manager.py`**: Coordinates file scanning and database population
+- **`export_manager.py`**: Handles markdown export with tag hierarchy
+
+#### **Service Layer** (`src/services/`)
+- **`conference_talks_service.py`**: Orchestrates all components
+- **Provides unified API** to the UI layer
+- **Delegates specialized tasks** to appropriate helper classes
+
+#### **UI Layer** (`src/pages/`, `src/components/`)
+- **Uses service layer only** - no direct database access
+- **Focused on user interaction** and presentation
+
+### **Architecture Benefits**
+
+#### **Maintainability**
+- Changes to file parsing don't affect database code
+- Database changes don't affect text processing
+- Each class can be tested independently
+
+#### **Flexibility** 
+- Easy to swap database implementations (PostgreSQL, MongoDB, etc.)
+- Text processing algorithms can be changed without affecting other components
+- Export formats can be added without touching core logic
+
+#### **Testability**
+- Each component can be unit tested in isolation
+- Mock implementations can be easily created
+- Clear interfaces make testing straightforward
+
+## 🔧 Component Responsibilities
+
+### Database Layer (Pure CRUD)
+```python
+# Only handles database operations
+service.add_talk(title, speaker, date, url)
+service.get_talks_summary()
+service.add_paragraph(talk_id, content, keywords)
+service.tag_paragraph(paragraph_id, tag_id)
+```
+
+### File Processing
+```python
+# Handles file parsing
+service.parse_talk_file(file_path)
+service.get_all_talk_files()
+```
+
+### Text Processing
+```python
+# Handles text analysis
+service.split_into_paragraphs(content)
+service.find_keyword_matches(text, keywords)
+```
+
+### Search Coordination
+```python
+# Coordinates search workflows
+service.scan_for_keywords(keywords)
+service.search_and_populate_database(keywords)
+```
+
+### Export Operations
+```python
+# Handles export functionality
+service.export_to_markdown(output_file)
+```
 
 ## 📄 Page Modules
 
+All page modules now use the **service layer** instead of direct database access:
+
 ### `search_and_tag.py`
-- Keyword search interface
-- Search result display with tagging
-- Keyword highlighting
+- Uses `service.search_and_populate_database()` for file scanning
+- Uses `service.get_keywords()` for keyword suggestions
+- Delegates all database operations to service layer
 
 ### `manage_paragraphs.py`
-- Flashcard-style navigation through paragraphs
-- Advanced filtering (tags, keywords, review status)
-- Quick tagging interface with hierarchy support
-- Tag creation on-the-fly
-
-### `manage_talks.py`
-- Overview of all talks in database
-- Keyword usage metrics
-- Talk statistics
+- Uses `service.get_all_paragraphs_with_filters()` for filtering
+- Uses `service.tag_paragraph()` for tagging operations
+- Clean separation between UI logic and data operations
 
 ### `manage_tags.py`
-- Hierarchical tag creation and editing
-- Tag relationship management
-- Safe deletion with dependency checking
-
-### `manage_keywords.py`
-- View all keywords and their usage
-- Click to see paragraphs matching each keyword
-- Keyword deletion
-
-### `add_tags_to_paragraphs.py`
-- Interface to add tags to selected paragraphs
-- Supports hierarchical tag selection
-- Batch processing of paragraphs
+- Uses `service.add_tag()`, `service.update_tag()`, `service.delete_tag()`
+- Hierarchical tag operations through service layer
+- No direct database queries in UI code
 
 ### `export.py`
-- Export tagged paragraphs to CSV
-- Customizable export fields
-- Preview before export
+- Uses `service.export_to_markdown()` for export functionality
+- Uses `service.get_export_statistics()` for preview data
+- Export logic completely separated from UI presentation
 
-### `summary.py`
-- Project overview and statistics
-- Progress tracking
-- Recent talks display
+## 🧩 Service Layer API
 
-## 🧩 Reusable Components
+The `ConferenceTalksService` provides a unified interface:
 
-### `FlashcardNavigator`
-- Navigation through any list of items
-- Previous/Next/Random/Jump functionality
-- Session state management
+```python
+# Initialize service (coordinates all components)
+service = ConferenceTalksService(db_path="talks.db", data_path="data/")
 
-### `TagSelector`
-- Tag search and selection interface
-- Hierarchical tag creation
-- Popup management for tag operations
+# Database operations (delegated to database layer)
+service.add_talk(title, speaker, date, url)
+service.get_talks_summary()
+service.search_paragraphs(keywords)
 
-### `FilterControls`
-- Paragraph filtering interface
-- Tag and keyword filter options
+# File operations (delegated to file parser)
+service.parse_talk_file(file_path)
+service.get_all_talk_files()
 
-## 🛠️ Utility Functions
+# Text processing (delegated to text processor)
+service.split_into_paragraphs(content)
+service.find_keyword_matches(text, keywords)
 
-### Content Processing
-- `highlight_keywords()`: Highlight search terms in text
-- `parse_keywords()`: Parse comma-separated keyword input
+# Search workflows (delegated to search manager)
+service.scan_for_keywords(keywords)
+service.search_and_populate_database(keywords)
 
-### UI Helpers
-- `display_hierarchical_tags()`: Show explicit vs implicit tags
-- `display_talk_info()`: Consistent talk information display
-- Session state management functions
+# Export operations (delegated to export manager)
+service.export_to_markdown(output_file)
+```
+
+## 🔄 Migration from Monolithic Architecture
+
+### Before (Monolithic Database Class)
+- Single large class handling database, file parsing, text processing, and export
+- Difficult to test individual components
+- Changes to one feature could break others
+- Hard to extend with new functionality
+
+### After (Service-Oriented Architecture)
+- **Database classes**: Pure CRUD operations only
+- **Helper classes**: Specialized single responsibilities
+- **Service layer**: Orchestrates all components
+- **Easy to test**: Each component is independent
+- **Easy to extend**: Add new helper classes or swap implementations
 
 ## ⚙️ Configuration
 
 All application settings are centralized in `src/config/settings.py`:
 - Application metadata (title, icon, layout)
-- Database and file paths
-- UI settings (pagination, column counts)
-- Navigation structure
-- Default values
-
-## 🔄 Migration Guide
-
-The modular version (`app_modular.py`) provides the same functionality as the original `app.py` with improved organization:
-
-1. **All existing features preserved**
-2. **Same user interface and workflow**
-3. **Enhanced performance through better code organization**
-4. **Easier maintenance and future development**
+- Navigation structure and page organization
+- Default database and file paths
+- UI settings and constants
 
 ## 🧪 Development
 
-### Adding a New Page
-1. Create a new file in `src/pages/`
-2. Implement a `render_[page_name]_page(db)` function
-3. Add the page to `NAVIGATION_PAGES` in `src/config/settings.py`
-4. Add the route in `app_modular.py`
+### Adding New Functionality
+1. **Database operations**: Add methods to database interface and implementation
+2. **File processing**: Extend `FileParser` class
+3. **Text processing**: Extend `TextProcessor` class
+4. **Search workflows**: Extend `SearchManager` class
+5. **Export formats**: Extend `ExportManager` class
+6. **UI features**: Add page modules or UI components
 
-### Creating Reusable Components
-1. Add component class to `src/components/ui_components.py`
-2. Update `src/components/__init__.py` exports
-3. Import and use in page modules
+### Testing Strategy
+- **Unit tests**: Test each helper class independently
+- **Integration tests**: Test service layer coordination
+- **UI tests**: Test page modules with mock service layer
 
-### Adding Utility Functions
-1. Add functions to `src/utils/helpers.py`
-2. Update `src/utils/__init__.py` exports
-3. Import where needed
+### Best Practices Implemented
+- **Single Responsibility Principle**: Each class has one clear purpose
+- **Dependency Injection**: Service layer coordinates dependencies
+- **Interface Segregation**: Clean interfaces between layers
+- **Open/Closed Principle**: Easy to extend without modifying existing code
 
 ## 📊 Features
 
@@ -176,13 +245,99 @@ The modular version (`app_modular.py`) provides the same functionality as the or
 - **Smart Filtering**: Filter by tags, keywords, review status
 - **Keyword Highlighting**: Visual emphasis on search terms
 - **Progress Tracking**: Monitor review completion
-- **Tag Management**: Full CRUD operations with relationship management
+- **Markdown Export**: Export with tag hierarchy organization
+- **Database Abstraction**: Support for multiple database backends
 
-## 🎯 Best Practices Implemented
+## 🎯 Architecture Principles
 
-- **DRY Principle**: No code duplication
-- **Single Responsibility**: Each module has one clear purpose
-- **Consistent Interfaces**: Standardized function signatures
-- **Error Handling**: Graceful error management
-- **Documentation**: Comprehensive docstrings
-- **Type Hints**: Better code clarity and IDE support
+✅ **Single Responsibility**: Each class has one reason to change  
+✅ **Separation of Concerns**: Database, business logic, and UI are separate  
+✅ **Dependency Inversion**: UI depends on abstractions, not concrete implementations  
+✅ **Open/Closed**: Easy to extend without modifying existing code  
+✅ **Interface Segregation**: Clean, focused interfaces between components
+
+## 🧪 Testing
+
+The project includes a comprehensive test suite with both unit and integration tests that verify the application's core functionality.
+
+### Running Tests
+
+```bash
+# Run all tests (recommended)
+python run_tests.py --all
+
+# Run only unit tests
+python run_tests.py --unit
+
+# Run only integration tests
+python run_tests.py --integration
+```
+
+### Test Structure
+
+```
+tests/
+├── unit/                           # Unit tests for individual components
+│   ├── test_csv_basic.py              # CSV functionality tests
+│   └── test_csv_import_export.py      # Database operations tests
+├── integration/                    # Integration tests for complete workflows
+│   ├── test_standalone_workflow.py    # End-to-end application workflow test
+│   └── test_database_merge.py         # Database merging functionality test
+└── dummy_data/                     # Test data for integration tests
+    └── General_Conference_Talks/      # Sample conference talks from 2001, 2024-2025
+```
+
+### Integration Test Details
+
+#### Simple Workflow Integration Test
+Tests the core application workflow that users follow:
+
+1. **🔍 Keyword Search**: Searches dummy conference talks for specific keywords (`faith`, `Christ`, `testimony`)
+2. **📥 Selective Import**: Only imports talks and paragraphs containing the search keywords (mirrors real user behavior)
+3. **🏷️ Tagging**: Creates meaningful tags and applies them to relevant paragraphs based on content
+4. **📤 Export Testing**: Validates markdown export functionality
+5. **✅ Verification**: Confirms all data is properly stored and accessible
+
+**Expected Results**: ~237 talks, ~2,265 paragraphs containing keywords
+
+#### Database Merge Integration Test
+Tests the scenario where two separate databases need to be merged:
+
+1. **📊 Data Splitting**: Divides dummy data into two subsets by year (2001 vs 2024-2025)
+2. **🔍 Keyword Filtering**: Each database searches for keywords (`faith`, `Christ`) in its subset
+3. **📤 CSV Export**: Exports both databases to CSV format
+4. **📥 Merge Import**: Imports both CSV sets into a new merged database
+5. **✅ Verification**: Confirms all data from both sources is preserved with proper deduplication
+
+**Expected Results**: Successfully merged database with all talks, paragraphs, and tags from both sources
+
+### Test Results
+
+When tests pass, you'll see output like:
+```
+🎉 ALL TESTS PASSED!
+✅ Unit Tests: 9 tests passed
+✅ Integration Tests: 2 tests passed
+```
+
+### Development Testing
+
+For development and debugging, you can run individual test files:
+
+```bash
+# Run specific unit test
+python -m pytest tests/unit/test_csv_basic.py -v
+
+# Run integration test directly
+python tests/integration/test_standalone_workflow.py
+python tests/integration/test_database_merge.py
+```
+
+### Test Data
+
+The integration tests use a subset of dummy conference talk data located in `tests/dummy_data/General_Conference_Talks/`. This data includes:
+- Sample talks from 2001, 2024, and 2025
+- Realistic talk structure with titles, speakers, and content
+- Content containing the test keywords used in integration tests
+
+---

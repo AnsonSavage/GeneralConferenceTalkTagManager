@@ -4,20 +4,21 @@ Manage Talks page module.
 import streamlit as st
 import pandas as pd
 from typing import List, Dict, Any
+from ..database.base_database import BaseDatabaseInterface  
 
 
-def render_manage_talks_page(db) -> None:
+def render_manage_talks_page(database: BaseDatabaseInterface) -> None:
     """Render the Manage Talks page."""
     st.header("Talks in Database")
     st.info("💡 Talks are automatically added to the database when you search for keywords. Only talks with matching paragraphs are stored.")
     
     # Display existing talks
     st.subheader("Talks with Keyword Matches")
-    talks = db.get_talks_summary()
+    talks = database.get_talks_summary()
     
     if talks:
         _render_talks_table(talks)
-        _render_keyword_usage_metrics(db)
+        _render_keyword_usage_metrics(database)
     else:
         st.info("No talks in database yet. Start by searching for keywords to populate the database with matching content.")
 
@@ -40,11 +41,11 @@ def _render_talks_table(talks: List[Dict[str, Any]]) -> None:
     )
 
 
-def _render_keyword_usage_metrics(db) -> None:
+def _render_keyword_usage_metrics(database: BaseDatabaseInterface) -> None:
     """Render keyword usage metrics."""
     st.subheader("Keyword Usage")
     
-    keyword_usage = db.get_keyword_usage_statistics()
+    keyword_usage = database.get_keyword_usage_statistics()
     
     if keyword_usage:
         cols = st.columns(3)
