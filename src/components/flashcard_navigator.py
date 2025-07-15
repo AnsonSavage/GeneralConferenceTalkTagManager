@@ -3,6 +3,7 @@ Flashcard navigation component for the Conference Talks Analysis application.
 """
 import streamlit as st
 from typing import List, Any, Optional
+from streamlit_shortcuts import shortcut_button, add_shortcuts
 from ..utils.helpers import get_random_index
 
 
@@ -373,7 +374,7 @@ class FlashcardNavigator:
         
         st.markdown("---")
         
-        # Dual navigation system
+        # Dual navigation system with keyboard shortcuts
         st.markdown("### 🧭 Navigation Controls")
         
         # Sequential navigation row
@@ -381,22 +382,44 @@ class FlashcardNavigator:
         seq_col1, seq_col2, seq_col3, seq_col4 = st.columns([1, 1, 1, 1])
         
         with seq_col1:
-            if st.button("⬅️ Previous", disabled=current_index == 0, key=f"seq_prev_{self.session_key}"):
+            if shortcut_button(
+                "⬅️ Previous", 
+                "arrowleft",
+                disabled=current_index == 0, 
+                key=f"seq_prev_{self.session_key}",
+                help="Previous paragraph (← Arrow)"
+            ):
                 self.move_to_previous()
                 st.rerun()
         
         with seq_col2:
-            if st.button("➡️ Next", disabled=current_index == self.total_items - 1, key=f"seq_next_{self.session_key}"):
+            if shortcut_button(
+                "➡️ Next", 
+                "arrowright",
+                disabled=current_index == self.total_items - 1, 
+                key=f"seq_next_{self.session_key}",
+                help="Next paragraph (→ Arrow)"
+            ):
                 self.move_to_next()
                 st.rerun()
         
         with seq_col3:
-            if st.button("⏮️ First", key=f"seq_first_{self.session_key}"):
+            if shortcut_button(
+                "⏮️ First", 
+                "ctrl+arrowleft",
+                key=f"seq_first_{self.session_key}",
+                help="First paragraph (Ctrl+← Arrow)"
+            ):
                 st.session_state[self.session_key] = 0
                 st.rerun()
         
         with seq_col4:
-            if st.button("⏭️ Last", key=f"seq_last_{self.session_key}"):
+            if shortcut_button(
+                "⏭️ Last", 
+                "ctrl+arrowright",
+                key=f"seq_last_{self.session_key}",
+                help="Last paragraph (Ctrl+→ Arrow)"
+            ):
                 st.session_state[self.session_key] = self.total_items - 1
                 st.rerun()
         
@@ -408,13 +431,25 @@ class FlashcardNavigator:
         next_unreviewed_idx = self.get_next_unreviewed_index(current_index)
         
         with unrev_col1:
-            if st.button("⬅️ Prev Unreviewed", disabled=prev_unreviewed_idx is None, key=f"unrev_prev_{self.session_key}"):
+            if shortcut_button(
+                "⬅️ Prev Unreviewed", 
+                "shift+arrowleft",
+                disabled=prev_unreviewed_idx is None, 
+                key=f"unrev_prev_{self.session_key}",
+                help="Previous unreviewed paragraph (Shift+← Arrow)"
+            ):
                 if prev_unreviewed_idx is not None:
                     st.session_state[self.session_key] = prev_unreviewed_idx
                     st.rerun()
         
         with unrev_col2:
-            if st.button("➡️ Next Unreviewed", disabled=next_unreviewed_idx is None, key=f"unrev_next_{self.session_key}"):
+            if shortcut_button(
+                "➡️ Next Unreviewed", 
+                "shift+arrowright",
+                disabled=next_unreviewed_idx is None, 
+                key=f"unrev_next_{self.session_key}",
+                help="Next unreviewed paragraph (Shift+→ Arrow)"
+            ):
                 if next_unreviewed_idx is not None:
                     st.session_state[self.session_key] = next_unreviewed_idx
                     st.rerun()
@@ -427,7 +462,13 @@ class FlashcardNavigator:
                     first_unreviewed = i
                     break
             
-            if st.button("⏮️ First Unreviewed", disabled=first_unreviewed is None, key=f"unrev_first_{self.session_key}"):
+            if shortcut_button(
+                "⏮️ First Unreviewed", 
+                "ctrl+shift+arrowleft",
+                disabled=first_unreviewed is None, 
+                key=f"unrev_first_{self.session_key}",
+                help="First unreviewed paragraph (Ctrl+Shift+← Arrow)"
+            ):
                 if first_unreviewed is not None:
                     st.session_state[self.session_key] = first_unreviewed
                     st.rerun()
@@ -440,16 +481,31 @@ class FlashcardNavigator:
                     last_unreviewed = i
                     break
             
-            if st.button("⏭️ Last Unreviewed", disabled=last_unreviewed is None, key=f"unrev_last_{self.session_key}"):
+            if shortcut_button(
+                "⏭️ Last Unreviewed", 
+                "ctrl+shift+arrowright",
+                disabled=last_unreviewed is None, 
+                key=f"unrev_last_{self.session_key}",
+                help="Last unreviewed paragraph (Ctrl+Shift+→ Arrow)"
+            ):
                 if last_unreviewed is not None:
                     st.session_state[self.session_key] = last_unreviewed
                     st.rerun()
         
         # Additional controls row
         st.markdown("**⚡ Quick Actions**")
-        quick_col1, quick_col2, quick_col3 = st.columns([1, 1, 2])
+        quick_col1, quick_col2 = st.columns([1, 2])
         
-        with quick_col3:
+        with quick_col1:
+            if shortcut_button(
+                "🔄 Refresh", 
+                "f5",
+                key=f"dual_refresh_{self.session_key}",
+                help="Refresh page (F5)"
+            ):
+                st.rerun()
+        
+        with quick_col2:
             # Jump to specific paragraph
             jump_col1, jump_col2 = st.columns([3, 1])
             with jump_col1:
@@ -461,9 +517,20 @@ class FlashcardNavigator:
                     key=f"dual_jump_input_{self.session_key}"
                 )
             with jump_col2:
-                if st.button("Go", key=f"dual_go_{self.session_key}"):
+                if shortcut_button(
+                    "Go", 
+                    "enter",
+                    key=f"dual_go_{self.session_key}",
+                    help="Jump to paragraph (Enter)"
+                ):
                     st.session_state[self.session_key] = jump_to - 1
                     st.rerun()
+        
+        # Add shortcuts to jump input field
+        add_shortcuts(
+            **{f"dual_jump_input_{self.session_key}": "ctrl+j"}
+        )
+        
         self.render_fragmented_progress_bar()
 
     def render_fragmented_progress_bar(self) -> None:

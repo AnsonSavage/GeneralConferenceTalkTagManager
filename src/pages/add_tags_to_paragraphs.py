@@ -3,6 +3,7 @@ Add Tags to Paragraphs page module - Flashcard-style tagging workflow.
 """
 import streamlit as st
 from typing import Dict, Any
+from streamlit_shortcuts import shortcut_button, add_shortcuts
 from ..components.ui_components import FlashcardNavigator
 from ..utils.helpers import highlight_keywords, display_hierarchical_tags_with_indentation, display_matched_keywords
 from ..database.base_database import BaseDatabaseInterface
@@ -11,6 +12,35 @@ from ..database.base_database import BaseDatabaseInterface
 def render_add_tags_page(database: BaseDatabaseInterface) -> None:
     """Render the Add Tags to Paragraphs page with flashcard interface."""
     st.header("📝 Add Tags to Paragraphs")
+    
+    # Keyboard shortcuts help section
+    with st.expander("⌨️ Keyboard Shortcuts Guide", expanded=False):
+        st.markdown("""
+        **🧭 Navigation Shortcuts:**
+        - `←/→ Arrow Keys` - Previous/Next paragraph
+        - `Ctrl+←/→` - First/Last paragraph
+        - `Shift+←/→` - Previous/Next unreviewed paragraph
+        - `Ctrl+Shift+←/→` - First/Last unreviewed paragraph
+        - `R` - Random paragraph
+        - `F5` - Refresh page
+        - `Enter` - Jump to paragraph (when in jump field)
+        - `Ctrl+J` - Focus jump input field
+        
+        **🏷️ Tagging Shortcuts:**
+        - `Ctrl+T` - Focus tag selector dropdown
+        - `Ctrl+Enter` - Complete & move to next paragraph
+        - `Ctrl+Shift+Enter` - Skip to next paragraph
+        
+        **📝 Notes Shortcuts:**
+        - `Ctrl+N` - Focus notes textarea
+        - `Ctrl+S` - Save notes
+        
+        **💡 Pro Tips:**
+        - Use arrow keys for quick navigation through paragraphs
+        - Use Shift+Arrow keys to jump between unreviewed paragraphs only
+        - Use Ctrl+Enter to quickly mark paragraphs as complete and move forward
+        - Use Ctrl+T to quickly access the tag selector without scrolling
+        """)
     
     # Store paragraph list in session state to prevent re-querying after tag additions
     if 'add_tags_paragraph_list' not in st.session_state:
@@ -241,7 +271,13 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
     col1, col2, col3 = st.columns([1, 1, 2])
     
     with col1:
-        if st.button("✅ Complete & Next", type="primary", key="complete_and_next"):
+        if shortcut_button(
+            "✅ Complete & Next", 
+            "ctrl+enter",
+            type="primary", 
+            key="complete_and_next",
+            help="Mark as complete and move to next paragraph (Ctrl+Enter)"
+        ):
             database.mark_paragraph_reviewed(paragraph_id, True)
             
             # Update the paragraph data in session state to reflect the reviewed status
@@ -261,7 +297,12 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
             st.rerun()
     
     with col2:
-        if st.button("⏭️ Skip for Now", key="skip_paragraph"):
+        if shortcut_button(
+            "⏭️ Skip for Now", 
+            "ctrl+shift+enter",
+            key="skip_paragraph",
+            help="Skip to next paragraph without marking as complete (Ctrl+Shift+Enter)"
+        ):
             # Move to next without marking as reviewed
             current_index = navigator.get_current_index()
             if current_index < navigator.total_items - 1:
@@ -273,6 +314,11 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
         # Progress indicator
         remaining = navigator.total_items - navigator.get_current_index() - 1
         st.info(f"📊 {remaining} paragraphs remaining")
+    
+    # Add shortcuts for the tag selector dropdown
+    add_shortcuts(
+        **{f"tag_selector_dropdown_{paragraph_id}": "ctrl+t"}
+    )
 
 
 def _render_notes_section(paragraph_id: int, database: BaseDatabaseInterface) -> None:
@@ -295,10 +341,23 @@ def _render_notes_section(paragraph_id: int, database: BaseDatabaseInterface) ->
             "Add your notes about this paragraph:",
             value=current_notes,
             height=100,
-            placeholder="What insights, connections, or thoughts do you have about this paragraph?"
+            placeholder="What insights, connections, or thoughts do you have about this paragraph?",
+            key=f"notes_textarea_{paragraph_id}"
         )
         
-        if st.form_submit_button("💾 Save Notes", type="primary"):
+        if st.form_submit_button(
+            "💾 Save Notes", 
+            type="primary",
+            help="Save notes (Ctrl+S)"
+        ):
             database.update_paragraph_notes(paragraph_id, notes)
             st.success("✅ Notes saved!")
             st.rerun()
+    
+    # Add shortcuts for notes textarea and form submit
+    add_shortcuts(
+        **{
+            f"notes_textarea_{paragraph_id}": "ctrl+n",
+            f"notes_form_{paragraph_id}": "ctrl+s"
+        }
+    )
