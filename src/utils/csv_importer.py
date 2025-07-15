@@ -94,7 +94,7 @@ class CSVImporter(BaseImporter):
     def _validate_file_structure(self, found_files: Dict[str, Optional[str]]):
         """Validate the structure of CSV files."""
         expected_columns = {
-            'talks': ['id', 'title', 'speaker', 'conference_date', 'session', 'hyperlink'],
+            'talks': ['id', 'title', 'speaker', 'conference_date', 'hyperlink'],
             'paragraphs': ['id', 'talk_id', 'paragraph_number', 'content', 'matched_keywords', 
                           'notes', 'reviewed', 'review_date'],
             'tags': ['id', 'name', 'description', 'parent_tag_id'],
@@ -109,6 +109,10 @@ class CSVImporter(BaseImporter):
                     reader = csv.DictReader(csvfile)
                     actual_columns = set(reader.fieldnames or [])
                     expected_columns_set = set(expected_columns[file_type])
+                    
+                    # For backward compatibility, allow session field in talks but don't require it
+                    if file_type == 'talks' and 'session' in actual_columns:
+                        actual_columns.discard('session')
                     
                     if not expected_columns_set.issubset(actual_columns):
                         missing = expected_columns_set - actual_columns
@@ -245,7 +249,6 @@ class CSVImporter(BaseImporter):
                             'title': row['title'],
                             'speaker': row['speaker'],
                             'conference_date': row['conference_date'],
-                            'session': row['session'] or None,
                             'url': row['hyperlink'] or None
                         }
                         self.database.add_or_update_talk(talk_data)
@@ -255,14 +258,14 @@ class CSVImporter(BaseImporter):
                             title=row['title'],
                             speaker=row['speaker'],
                             conference_date=row['conference_date'],
-                            hyperlink=row['hyperlink'] or None,
-                            session=row['session'] or None
+                            hyperlink=row['hyperlink'] or None
                         )
-                    
+
                     self.import_stats['talks_imported'] += 1
                     
                 except Exception as e:
-                    self.import_stats['errors'].append(f"Error importing talk '{row.get('title', 'Unknown')}': {str(e)}")
+                    print(f"Error importing talk: {row.get('title', 'Unknown')} - {e}")
+                    continue
     
     def _import_paragraphs(self, file_path: str, merge_mode: bool):
         """Import paragraphs from CSV file."""

@@ -109,7 +109,6 @@ class SearchManager:
                 'talk_title': talk_data['title'],
                 'speaker': talk_data['speaker'],
                 'conference_date': talk_data['conference_date'],
-                'session': talk_data['session'],
                 'hyperlink': talk_data['url']
             })
         

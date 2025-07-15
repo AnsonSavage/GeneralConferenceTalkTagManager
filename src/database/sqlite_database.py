@@ -3,8 +3,8 @@ SQLite implementation of the conference talks database.
 """
 import sqlite3
 import json
-from datetime import datetime
-from typing import List, Dict, Optional, Any, override
+from datetime import datetime, date
+from typing import List, Dict, Any, override
 
 from .base_database import BaseDatabaseInterface
 
@@ -23,6 +23,31 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         self.db_path = connection_params.get('db_path', 'conference_talks.db')
         self.init_database()
 
+    def _parse_conference_date(self, date_string: str) -> date:
+        """Convert conference date string to date object."""
+        if isinstance(date_string, date):
+            return date_string
+        
+        # Handle existing format like "April 2023" or "October 2023"
+        if isinstance(date_string, str):
+            parts = date_string.strip().split()
+            if len(parts) == 2:
+                month_str, year_str = parts
+                year = int(year_str)
+                month = 4 if month_str.lower() == 'april' else 10
+                return date(year, month, 1)
+        
+        # Fallback for any other format
+        return date.today()
+
+    def _format_conference_date(self, date_obj: date) -> str:
+        """Convert date object to display string."""
+        if isinstance(date_obj, str):
+            return date_obj  # Already formatted
+        
+        month_name = "April" if date_obj.month == 4 else "October"
+        return f"{month_name} {date_obj.year}"
+
     @override
     def init_database(self) -> None:
         """Initialize the database with tables"""
@@ -35,8 +60,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 speaker TEXT NOT NULL,
-                conference_date TEXT NOT NULL,
-                session TEXT,
+                conference_date DATE NOT NULL,
                 hyperlink TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -97,6 +121,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             CREATE INDEX IF NOT EXISTS idx_paragraph_keywords_paragraph_id ON paragraph_keywords(paragraph_id);
             CREATE INDEX IF NOT EXISTS idx_paragraph_keywords_keyword_id ON paragraph_keywords(keyword_id);
             CREATE INDEX IF NOT EXISTS idx_tags_parent ON tags(parent_tag_id);
+            CREATE INDEX IF NOT EXISTS idx_talks_conference_date ON talks(conference_date);
         """)
         
         conn.commit()
@@ -104,15 +129,18 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
     
     @override
     def add_talk(self, title: str, speaker: str, conference_date: str, 
-                 hyperlink: str, session: str = None) -> int:
+                 hyperlink: str) -> int:
         """Add a new talk and return its ID"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        # Convert conference_date to date object
+        date_obj = self._parse_conference_date(conference_date)
+        
         cursor.execute("""
-            INSERT INTO talks (title, speaker, conference_date, session, hyperlink)
-            VALUES (?, ?, ?, ?, ?)
-        """, (title, speaker, conference_date, session, hyperlink))
+            INSERT INTO talks (title, speaker, conference_date, hyperlink)
+            VALUES (?, ?, ?, ?)
+        """, (title, speaker, date_obj.isoformat(), hyperlink))
         
         talk_id = cursor.lastrowid
         conn.commit()
@@ -135,12 +163,15 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         if existing:
             talk_id = existing[0]
         else:
+            # Convert conference_date to date object
+            date_obj = self._parse_conference_date(talk_data['conference_date'])
+            
             # Add new talk
             cursor.execute("""
-                INSERT INTO talks (title, speaker, conference_date, session, hyperlink)
-                VALUES (?, ?, ?, ?, ?)
-            """, (talk_data['title'], talk_data['speaker'], talk_data['conference_date'], 
-                  talk_data['session'], talk_data['url']))
+                INSERT INTO talks (title, speaker, conference_date, hyperlink)
+                VALUES (?, ?, ?, ?)
+            """, (talk_data['title'], talk_data['speaker'], date_obj.isoformat(), 
+                  talk_data.get('url', talk_data.get('hyperlink'))))
             talk_id = cursor.lastrowid
         
         conn.commit()
@@ -155,27 +186,28 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         
         cursor.execute("""
             SELECT 
-                t.id, t.title, t.speaker, t.conference_date, t.session, t.hyperlink,
+                t.id, t.title, t.speaker, t.conference_date, t.hyperlink,
                 COUNT(p.id) as paragraph_count,
                 COUNT(CASE WHEN p.reviewed = 1 THEN 1 END) as reviewed_count
             FROM talks t
             LEFT JOIN paragraphs p ON t.id = p.talk_id
-            GROUP BY t.id, t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+            GROUP BY t.id, t.title, t.speaker, t.conference_date, t.hyperlink
             ORDER BY t.conference_date DESC, t.title
         """)
         
         rows = cursor.fetchall()
         talks = []
         for row in rows:
+            # Convert date back to display format
+            conference_date = datetime.fromisoformat(row[3]).date() if row[3] else None
             talks.append({
                 'id': row[0],
                 'title': row[1],
                 'speaker': row[2],
-                'conference_date': row[3],
-                'session': row[4],
-                'hyperlink': row[5],
-                'paragraph_count': row[6],
-                'reviewed_count': row[7]
+                'conference_date': self._format_conference_date(conference_date) if conference_date else '',
+                'hyperlink': row[4],
+                'paragraph_count': row[5],
+                'reviewed_count': row[6]
             })
         
         conn.close()
@@ -188,25 +220,26 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT t.id, t.title, t.speaker, t.conference_date, t.session, t.hyperlink,
+            SELECT t.id, t.title, t.speaker, t.conference_date, t.hyperlink,
                    COUNT(p.id) as total_paragraphs
             FROM talks t
             LEFT JOIN paragraphs p ON t.id = p.talk_id
-            GROUP BY t.id, t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+            GROUP BY t.id, t.title, t.speaker, t.conference_date, t.hyperlink
             ORDER BY t.conference_date DESC, t.title
         """)
         
         rows = cursor.fetchall()
         talks = []
         for row in rows:
+            # Convert date back to display format
+            conference_date = datetime.fromisoformat(row[3]).date() if row[3] else None
             talks.append({
                 'id': row[0],
                 'title': row[1],
                 'speaker': row[2],
-                'conference_date': row[3],
-                'session': row[4],
-                'hyperlink': row[5],
-                'total_paragraphs': row[6]
+                'conference_date': self._format_conference_date(conference_date) if conference_date else '',
+                'hyperlink': row[4],
+                'total_paragraphs': row[5]
             })
         
         conn.close()
@@ -341,7 +374,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             SELECT 
                 p.id, p.talk_id, p.paragraph_number, p.content, 
                 p.matched_keywords, p.notes, p.reviewed, p.review_date,
-                t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+                t.title, t.speaker, t.conference_date, t.hyperlink
             FROM paragraphs p
             JOIN talks t ON p.talk_id = t.id
             WHERE {where_clause}
@@ -362,6 +395,9 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
                 if keyword.lower() in content_lower:
                     actual_matches.append(keyword)
             
+            # Convert date back to display format
+            conference_date = datetime.fromisoformat(row[10]).date() if row[10] else None
+            
             results.append({
                 'id': row[0],
                 'talk_id': row[1],
@@ -373,9 +409,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
                 'review_date': row[7],
                 'talk_title': row[8],
                 'speaker': row[9],
-                'conference_date': row[10],
-                'session': row[11],
-                'hyperlink': row[12]
+                'conference_date': self._format_conference_date(conference_date) if conference_date else '',
+                'hyperlink': row[11]
             })
         
         conn.close()
@@ -628,7 +663,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             SELECT DISTINCT
                 p.id, p.talk_id, p.paragraph_number, p.content, 
                 p.matched_keywords, p.notes, p.reviewed, p.review_date,
-                t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+                t.title, t.speaker, t.conference_date, t.hyperlink
             FROM paragraphs p
             JOIN talks t ON p.talk_id = t.id
         """
@@ -662,6 +697,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         results = []
         for row in rows:
             matched_keywords = json.loads(row[4]) if row[4] else []
+            # Convert date back to display format
+            conference_date = datetime.fromisoformat(row[10]).date() if row[10] else None
             results.append({
                 'id': row[0],
                 'talk_id': row[1],
@@ -673,9 +710,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
                 'review_date': row[7],
                 'talk_title': row[8],
                 'speaker': row[9],
-                'conference_date': row[10],
-                'session': row[11],
-                'hyperlink': row[12]
+                'conference_date': self._format_conference_date(conference_date) if conference_date else '',
+                'hyperlink': row[11]
             })
         
         conn.close()
@@ -691,7 +727,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             SELECT 
                 p.id, p.talk_id, p.paragraph_number, p.content, 
                 p.matched_keywords, p.notes, p.reviewed, p.review_date,
-                t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+                t.title, t.speaker, t.conference_date, t.hyperlink
             FROM paragraphs p
             JOIN talks t ON p.talk_id = t.id
             JOIN paragraph_tags pt ON p.id = pt.paragraph_id
@@ -703,6 +739,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         results = []
         for row in rows:
             matched_keywords = json.loads(row[4]) if row[4] else []
+            # Convert date back to display format
+            conference_date = datetime.fromisoformat(row[10]).date() if row[10] else None
             results.append({
                 'id': row[0],
                 'talk_id': row[1],
@@ -714,9 +752,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
                 'review_date': row[7],
                 'talk_title': row[8],
                 'speaker': row[9],
-                'conference_date': row[10],
-                'session': row[11],
-                'hyperlink': row[12]
+                'conference_date': self._format_conference_date(conference_date) if conference_date else '',
+                'hyperlink': row[11]
             })
         
         conn.close()
@@ -819,7 +856,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         hierarchy = []
         current_id = tag_id
         
-        while current_id is not None:
+        while current_id:
             hierarchy.append(current_id)
             cursor.execute("SELECT parent_tag_id FROM tags WHERE id = ?", (current_id,))
             result = cursor.fetchone()
@@ -829,22 +866,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         return hierarchy
     
     @override
-    def update_paragraph_notes(self, paragraph_id: int, notes: str) -> None:
-        """Update notes for a paragraph."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            UPDATE paragraphs 
-            SET notes = ?
-            WHERE id = ?
-        """, (notes, paragraph_id))
-        
-        conn.commit()
-        conn.close()
-    
-    @override
-    def get_paragraph_with_notes(self, paragraph_id: int) -> Optional[Dict]:
+    def get_paragraph_with_notes(self, paragraph_id: int) -> Dict:
         """Get a paragraph with its notes."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -853,7 +875,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             SELECT 
                 p.id, p.talk_id, p.paragraph_number, p.content, 
                 p.matched_keywords, p.notes, p.reviewed, p.review_date,
-                t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+                t.title, t.speaker, t.conference_date, t.hyperlink
             FROM paragraphs p
             JOIN talks t ON p.talk_id = t.id
             WHERE p.id = ?
@@ -865,6 +887,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             return None
         
         matched_keywords = json.loads(row[4]) if row[4] else []
+        # Convert date back to display format
+        conference_date = datetime.fromisoformat(row[10]).date() if row[10] else None
         result = {
             'id': row[0],
             'talk_id': row[1],
@@ -876,9 +900,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             'review_date': row[7],
             'talk_title': row[8],
             'speaker': row[9],
-            'conference_date': row[10],
-            'session': row[11],
-            'hyperlink': row[12]
+            'conference_date': self._format_conference_date(conference_date) if conference_date else '',
+            'hyperlink': row[11]
         }
         
         conn.close()
@@ -992,7 +1015,7 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             SELECT 
                 p.id, p.talk_id, p.paragraph_number, p.content, 
                 p.matched_keywords, p.notes, p.reviewed, p.review_date,
-                t.title, t.speaker, t.conference_date, t.session, t.hyperlink
+                t.title, t.speaker, t.conference_date, t.hyperlink
             FROM paragraphs p
             JOIN talks t ON p.talk_id = t.id
             JOIN paragraph_keywords pk ON p.id = pk.paragraph_id
@@ -1005,6 +1028,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         results = []
         for row in rows:
             matched_keywords = json.loads(row[4]) if row[4] else []
+            # Convert date back to display format
+            conference_date = datetime.fromisoformat(row[10]).date() if row[10] else None
             results.append({
                 'id': row[0],
                 'talk_id': row[1],
@@ -1016,9 +1041,8 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
                 'review_date': row[7],
                 'talk_title': row[8],
                 'speaker': row[9],
-                'conference_date': row[10],
-                'session': row[11],
-                'hyperlink': row[12]
+                'conference_date': self._format_conference_date(conference_date) if conference_date else '',
+                'hyperlink': row[11]
             })
         
         conn.close()
@@ -1071,3 +1095,18 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         
         conn.close()
         return stats
+    
+    @override
+    def update_paragraph_notes(self, paragraph_id: int, notes: str) -> None:
+        """Update notes for a paragraph."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE paragraphs 
+            SET notes = ?
+            WHERE id = ?
+        """, (notes, paragraph_id))
+        
+        conn.commit()
+        conn.close()

@@ -85,7 +85,7 @@ class CSVExporter(BaseExporter):
         
         with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
             if talks:
-                fieldnames = ['id', 'title', 'speaker', 'conference_date', 'session', 'hyperlink']
+                fieldnames = ['id', 'title', 'speaker', 'conference_date', 'hyperlink']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
                 
@@ -95,7 +95,6 @@ class CSVExporter(BaseExporter):
                         'title': talk['title'],
                         'speaker': talk['speaker'],
                         'conference_date': talk['conference_date'],
-                        'session': talk.get('session', ''),
                         'hyperlink': talk.get('hyperlink', '')
                     })
         

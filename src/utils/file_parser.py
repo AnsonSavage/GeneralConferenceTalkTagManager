@@ -53,7 +53,6 @@ class FileParser:
             'speaker': speaker,
             'url': url,
             'conference_date': conference_date,
-            'session': None,  # Not available in file format
             'content': talk_body,
             'file_path': file_path
         }

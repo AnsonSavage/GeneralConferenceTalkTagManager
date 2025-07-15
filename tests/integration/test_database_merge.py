@@ -111,8 +111,9 @@ class SimpleDatabaseMergeTest:
                             found_keywords = [kw for kw in keywords if kw.lower() in talk_text_lower]
                             
                             if found_keywords:
-                                # Add talk to database
-                                talk_id = db.add_talk(title, speaker, conference_date, url, session)
+                                # Add talk to database - use proper conference date format
+                                conference_date = f"{session} {year}"
+                                talk_id = db.add_talk(title, speaker, conference_date, url)
                                 talks_added += 1
                                 
                                 # Add paragraphs containing keywords
@@ -145,12 +146,11 @@ class SimpleDatabaseMergeTest:
         
         with open(talks_file, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['id', 'title', 'speaker', 'conference_date', 'session', 'hyperlink'])
+            writer.writerow(['id', 'title', 'speaker', 'conference_date', 'hyperlink'])
             for talk in talks:
                 writer.writerow([
                     talk['id'], talk['title'], talk['speaker'], 
-                    talk['conference_date'], talk.get('session', ''), 
-                    talk.get('hyperlink', '')
+                    talk['conference_date'], talk.get('hyperlink', '')
                 ])
         
         # Export paragraphs
@@ -191,7 +191,7 @@ class SimpleDatabaseMergeTest:
                     try:
                         db.add_talk(
                             row['title'], row['speaker'], row['conference_date'],
-                            row['hyperlink'], row['session']
+                            row['hyperlink']
                         )
                     except Exception:
                         pass  # Talk might already exist

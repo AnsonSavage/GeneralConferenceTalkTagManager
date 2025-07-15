@@ -3,7 +3,7 @@ Abstract base class for database operations.
 This defines the interface that all database implementations must follow.
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Any, Optional
 
 
 class BaseDatabaseInterface(ABC):
@@ -26,7 +26,7 @@ class BaseDatabaseInterface(ABC):
     # Talk operations
     @abstractmethod
     def add_talk(self, title: str, speaker: str, conference_date: str, 
-                 hyperlink: str, session: str = None) -> int:
+                 hyperlink: str) -> int:
         """Add a new talk and return its ID."""
         pass
     

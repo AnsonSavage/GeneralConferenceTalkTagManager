@@ -106,8 +106,9 @@ class SimpleWorkflowIntegrationTest:
                             
                             # Only add talks that contain our search keywords
                             if found_keywords:
-                                # Add talk to database
-                                talk_id = db.add_talk(title, speaker, conference_date, url, session)
+                                # Add talk to database - use proper conference date format
+                                conference_date = f"{session} {year}"
+                                talk_id = db.add_talk(title, speaker, conference_date, url)
                                 talks_added += 1
                                 
                                 # Split into paragraphs and add only those containing keywords
