@@ -6,12 +6,148 @@ from typing import Dict, Any
 from streamlit_shortcuts import shortcut_button, add_shortcuts
 from ..components.ui_components import FlashcardNavigator
 from ..utils.helpers import highlight_keywords, display_hierarchical_tags_with_indentation, display_matched_keywords
+from ..utils.ollama_helper import create_ollama_tag_suggester
 from ..database.base_database import BaseDatabaseInterface
 
 
 def render_add_tags_page(database: BaseDatabaseInterface) -> None:
     """Render the Add Tags to Paragraphs page with flashcard interface."""
     st.header("📝 Add Tags to Paragraphs")
+    
+    # AI Tag Suggestions Settings
+    with st.expander("🤖 AI Tag Suggestions Settings", expanded=False):
+        enable_ai_suggestions = st.checkbox(
+            "Enable automatic tag suggestions",
+            value=st.session_state.get('enable_ai_suggestions', False),
+            key='enable_ai_suggestions',
+            help="Use Ollama to suggest relevant tags based on paragraph content"
+        )
+        
+        if enable_ai_suggestions:
+            # Model selection
+            suggester = create_ollama_tag_suggester()
+            available_models = suggester.get_available_models()
+            
+            if available_models:
+                # Find current model index, defaulting to auto-detected model
+                current_model = suggester.model_name
+                try:
+                    current_index = available_models.index(current_model)
+                except ValueError:
+                    current_index = 0
+                
+                st.selectbox(
+                    "Select Ollama model:",
+                    options=available_models,
+                    index=current_index,
+                    key='ollama_model',
+                    help="Choose which Ollama model to use for tag suggestions"
+                )
+                
+                # Show auto-detected model info
+                if suggester.model_name != st.session_state.get('ollama_model'):
+                    st.info(f"ℹ️ Auto-detected model: **{suggester.model_name}**")
+                
+                # AI Configuration Options
+                st.markdown("**AI Configuration:**")
+                
+                # Number of suggestions
+                num_suggestions = st.slider(
+                    "Number of tag suggestions:",
+                    min_value=1,
+                    max_value=5,
+                    value=st.session_state.get('ai_num_suggestions', 2),
+                    key='ai_num_suggestions',
+                    help="How many tag suggestions to generate per paragraph"
+                )
+                
+                # Custom prompt toggle
+                use_custom_prompt = st.checkbox(
+                    "Use custom prompt",
+                    value=st.session_state.get('ai_use_custom_prompt', False),
+                    key='ai_use_custom_prompt',
+                    help="Enable to customize the AI prompt template"
+                )
+                
+                if use_custom_prompt:
+                    st.markdown("**Custom Prompt Template:**")
+                    st.markdown("""
+                    Available placeholders:
+                    - `{tag_structure}` - The hierarchical list of available tags
+                    - `{paragraph_content}` - The paragraph text to analyze
+                    - `{existing_tags}` - Tags already applied to this paragraph
+                    - `{num_suggestions}` - Number of suggestions requested
+                    """)
+                    
+                    default_prompt = """You are an expert at analyzing religious conference talks and suggesting appropriate tags.
+
+{tag_structure}
+
+Paragraph to analyze:
+"{paragraph_content}"
+
+Currently applied tags: {existing_tags}
+
+Instructions:
+1. First, carefully analyze the paragraph content to understand its main themes, concepts, and doctrines
+2. For each potential tag, think through the reasoning BEFORE deciding to suggest it
+3. Suggest exactly {num_suggestions} tags that would be most appropriate for this paragraph
+4. Only suggest tags that exist EXACTLY as written in the provided tag hierarchy
+5. Do not suggest tags that are already applied to this paragraph
+6. For each suggestion, provide the reasoning first, then the tag name and confidence level
+7. Focus on the main themes, concepts, or doctrines discussed in the paragraph
+8. Consider both specific topics and broader theological themes
+9. Confidence levels: "high" (very certain), "medium" (reasonably certain), "low" (possible but uncertain)
+
+Structure your response as JSON with exactly {num_suggestions} tag suggestions. Each suggestion must include:
+- reasoning: A detailed explanation of why this tag fits the paragraph content
+- tag_name: The exact tag name from the available tags (must match exactly)
+- confidence: Either "high", "medium", or "low"
+
+Think step by step: analyze the content, consider the reasoning for each potential tag, then provide your {num_suggestions} best suggestions."""
+                    
+                    custom_prompt = st.text_area(
+                        "Custom prompt template:",
+                        value=st.session_state.get('ai_custom_prompt', default_prompt),
+                        height=300,
+                        key='ai_custom_prompt',
+                        help="Write your custom prompt using the placeholders above"
+                    )
+                    
+                    # Validate prompt
+                    required_placeholders = ['{tag_structure}', '{paragraph_content}', '{num_suggestions}']
+                    missing_placeholders = [p for p in required_placeholders if p not in custom_prompt]
+                    
+                    if missing_placeholders:
+                        st.warning(f"⚠️ Missing required placeholders: {', '.join(missing_placeholders)}")
+                    else:
+                        st.success("✅ Prompt template is valid")
+                
+                # Temperature and other model parameters
+                with st.expander("Advanced Model Parameters", expanded=False):
+                    temperature = st.slider(
+                        "Temperature (creativity):",
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=st.session_state.get('ai_temperature', 0.3),
+                        step=0.1,
+                        key='ai_temperature',
+                        help="Lower values = more focused/consistent, Higher values = more creative/varied"
+                    )
+                    
+                    top_p = st.slider(
+                        "Top-p (nucleus sampling):",
+                        min_value=0.1,
+                        max_value=1.0,
+                        value=st.session_state.get('ai_top_p', 0.9),
+                        step=0.1,
+                        key='ai_top_p',
+                        help="Controls diversity of token selection"
+                    )
+                
+            else:
+                st.error("⚠️ No Ollama models found. Please ensure Ollama is running and has models installed.")
+                st.info("To install a model, run: `ollama pull llama3.2` or `ollama pull gemma2`")
     
     # Keyboard shortcuts help section
     with st.expander("⌨️ Keyboard Shortcuts Guide", expanded=False):
@@ -84,16 +220,16 @@ def _render_tagging_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseI
         # Talk information header with enhanced styling and reviewed status
         reviewed_indicator = ""
         if reviewed_status:
-            reviewed_indicator = f'<span style="background-color: #d4edda; color: #155724; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; margin-left: 10px;">✅ REVIEWED</span>'
+            reviewed_indicator = '<span style="background-color: #d4edda; color: #155724; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; margin-left: 10px;">✅ REVIEWED</span>'
             if review_date:
                 import datetime
                 try:
                     review_dt = datetime.datetime.fromisoformat(review_date)
                     reviewed_indicator += f'<span style="color: #6c757d; font-size: 10px; margin-left: 5px;">({review_dt.strftime("%m/%d/%Y")})</span>'
-                except:
+                except Exception:
                     pass
         else:
-            reviewed_indicator = f'<span style="background-color: #f8d7da; color: #721c24; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; margin-left: 10px;">⚠️ NOT REVIEWED</span>'
+            reviewed_indicator = '<span style="background-color: #f8d7da; color: #721c24; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; margin-left: 10px;">⚠️ NOT REVIEWED</span>'
         
         st.markdown(f"""
         <div style="background: linear-gradient(90deg, #1f4e7a, #2d5a87); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
@@ -129,8 +265,134 @@ def _render_tagging_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseI
         
         st.divider()
         
+        # AI Tag Suggestions (if enabled)
+        if st.session_state.get('enable_ai_suggestions', False):
+            _render_ai_tag_suggestions(paragraph, database)
+        
         # Streamlined tagging interface
         _render_streamlined_tagging_interface(paragraph['id'], database, navigator)
+
+
+def _render_ai_tag_suggestions(paragraph: Dict[str, Any], database: BaseDatabaseInterface) -> None:
+    """Render AI-powered tag suggestions section."""
+    st.markdown("### 🤖 AI Tag Suggestions")
+    
+    # Get current tags for this paragraph
+    current_tags_data = database.get_paragraph_tags(paragraph['id'])
+    current_tag_names = [tag['name'] for tag in current_tags_data]
+    
+    # Get all tags for hierarchy
+    all_tags = database.get_all_tags()
+    
+    # Get AI configuration from session state
+    num_suggestions = st.session_state.get('ai_num_suggestions', 2)
+    use_custom_prompt = st.session_state.get('ai_use_custom_prompt', False)
+    custom_prompt = st.session_state.get('ai_custom_prompt', None) if use_custom_prompt else None
+    
+    # Create cache key that includes configuration parameters
+    config_hash = hash((num_suggestions, use_custom_prompt, custom_prompt))
+    cache_key = f"ai_suggestions_{paragraph['id']}_{config_hash}"
+    
+    # Check if we have cached suggestions for this paragraph with current config
+    if cache_key not in st.session_state:
+        # Clear old cache entries for this paragraph
+        old_keys = [key for key in st.session_state.keys() if key.startswith(f"ai_suggestions_{paragraph['id']}_")]
+        for old_key in old_keys:
+            st.session_state.pop(old_key, None)
+        
+        # Create suggester and get suggestions
+        suggester = create_ollama_tag_suggester()
+        
+        if suggester.is_available():
+            with st.spinner("🤖 Getting AI tag suggestions..."):
+                suggestions = suggester.suggest_tags(
+                    paragraph['content'],
+                    all_tags,
+                    current_tag_names,
+                    custom_prompt=custom_prompt,
+                    num_suggestions=num_suggestions
+                )
+                st.session_state[cache_key] = suggestions
+        else:
+            st.error("⚠️ Ollama is not available. Please ensure Ollama is running and the selected model is installed.")
+            return
+    
+    suggestions = st.session_state.get(cache_key)
+    
+    if suggestions:
+        # Show configuration info
+        config_info = f"**{len(suggestions)} suggestions"
+        if use_custom_prompt:
+            config_info += " (custom prompt)"
+        config_info += ":**"
+        st.markdown(config_info)
+        
+        for i, suggestion in enumerate(suggestions):
+            tag_name = suggestion.get('tag_name', 'Unknown')
+            confidence = suggestion.get('confidence', 'unknown')
+            reasoning = suggestion.get('reasoning', 'No reasoning provided')
+            
+            # Find the tag in the database to get its ID
+            tag_data = next((tag for tag in all_tags if tag['name'] == tag_name), None)
+            
+            if tag_data:
+                # Color code based on confidence
+                confidence_colors = {
+                    'high': '#28a745',
+                    'medium': '#ffc107', 
+                    'low': '#dc3545'
+                }
+                confidence_color = confidence_colors.get(confidence, '#6c757d')
+                
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.markdown(f"""
+                    <div style="border: 1px solid #e0e0e0; padding: 12px; border-radius: 8px; margin-bottom: 10px; background-color: #f8f9fa;">
+                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <strong style="color: #007bff;">🏷️ {tag_name}</strong>
+                            <span style="background-color: {confidence_color}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 10px; font-weight: bold;">
+                                {confidence.upper()}
+                            </span>
+                        </div>
+                        <div style="font-size: 14px; color: #6c757d; font-style: italic;">
+                            {reasoning}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    if tag_name not in current_tag_names:
+                        if st.button(
+                            "✨ Add", 
+                            key=f"add_ai_suggestion_{paragraph['id']}_{i}",
+                            help=f"Add '{tag_name}' to this paragraph",
+                            type="primary"
+                        ):
+                            database.tag_paragraph(paragraph['id'], tag_data['id'])
+                            st.success(f"✅ Added '{tag_name}'!")
+                            # Clear all AI suggestion caches for this paragraph
+                            old_keys = [key for key in st.session_state.keys() if key.startswith(f"ai_suggestions_{paragraph['id']}_")]
+                            for old_key in old_keys:
+                                st.session_state.pop(old_key, None)
+                            st.rerun()
+                    else:
+                        st.markdown("✅ *Already added*")
+            else:
+                st.warning(f"⚠️ Suggested tag '{tag_name}' not found in database")
+        
+        # Button to refresh suggestions
+        if st.button("🔄 Get New Suggestions", key=f"refresh_ai_{paragraph['id']}"):
+            # Clear all cached suggestions for this paragraph
+            old_keys = [key for key in st.session_state.keys() if key.startswith(f"ai_suggestions_{paragraph['id']}_")]
+            for old_key in old_keys:
+                st.session_state.pop(old_key, None)
+            st.rerun()
+    
+    else:
+        st.info("No AI suggestions available for this paragraph.")
+    
+    st.divider()
 
 
 def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatabaseInterface, navigator: FlashcardNavigator) -> None:
@@ -167,6 +429,11 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
                 
                 # Mark this tag as processed for this paragraph
                 st.session_state[last_processed_key] = selected_tag_name
+                
+                # Clear AI suggestions cache when a tag is manually added
+                ai_cache_key = f"ai_suggestions_{paragraph_id}"
+                st.session_state.pop(ai_cache_key, None)
+                
                 st.rerun()
     
     # Option to create new tag if none selected
