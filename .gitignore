@@ -1,7 +1,6 @@
 /data
 /.venv
 *.pyc
-*.db
 conference_talks.db
 test_01*.md
 *.csv
