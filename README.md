@@ -165,35 +165,6 @@ All page modules now use the **service layer** instead of direct database access
 - Uses `service.get_export_statistics()` for preview data
 - Export logic completely separated from UI presentation
 
-## 🧩 Service Layer API
-
-The `ConferenceTalksService` provides a unified interface:
-
-```python
-# Initialize service (coordinates all components)
-service = ConferenceTalksService(db_path="talks.db", data_path="data/")
-
-# Database operations (delegated to database layer)
-service.add_talk(title, speaker, date, url)
-service.get_talks_summary()
-service.search_paragraphs(keywords)
-
-# File operations (delegated to file parser)
-service.parse_talk_file(file_path)
-service.get_all_talk_files()
-
-# Text processing (delegated to text processor)
-service.split_into_paragraphs(content)
-service.find_keyword_matches(text, keywords)
-
-# Search workflows (delegated to search manager)
-service.scan_for_keywords(keywords)
-service.search_and_populate_database(keywords)
-
-# Export operations (delegated to export manager)
-service.export_to_markdown(output_file)
-```
-
 ## ⚙️ Configuration
 
 All application settings are centralized in `src/config/settings.py`:
