@@ -194,21 +194,6 @@ service.search_and_populate_database(keywords)
 service.export_to_markdown(output_file)
 ```
 
-## 🔄 Migration from Monolithic Architecture
-
-### Before (Monolithic Database Class)
-- Single large class handling database, file parsing, text processing, and export
-- Difficult to test individual components
-- Changes to one feature could break others
-- Hard to extend with new functionality
-
-### After (Service-Oriented Architecture)
-- **Database classes**: Pure CRUD operations only
-- **Helper classes**: Specialized single responsibilities
-- **Service layer**: Orchestrates all components
-- **Easy to test**: Each component is independent
-- **Easy to extend**: Add new helper classes or swap implementations
-
 ## ⚙️ Configuration
 
 All application settings are centralized in `src/config/settings.py`:
