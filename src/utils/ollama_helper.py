@@ -3,7 +3,9 @@ Ollama integration for automatic tag suggestions using Pydantic for structured o
 """
 import ollama
 import json
-from typing import List, Dict, Any, Optional
+import threading
+import time
+from typing import List, Dict, Any, Optional, Callable
 from pydantic import BaseModel, Field
 import streamlit as st
 
@@ -24,6 +26,28 @@ class TagSuggestionsResponse(BaseModel):
     )
 
 
+class AsyncTagSuggestionRequest:
+    """Represents an asynchronous tag suggestion request."""
+    
+    def __init__(self, paragraph_id: int, paragraph_content: str, tag_hierarchy: List[Dict[str, Any]], 
+                 existing_tags: List[str] = None, custom_prompt: str = None, 
+                 num_suggestions: int = 2, temperature: float = 0.3, top_p: float = 0.9,
+                 callback: Callable[[int, Optional[List[Dict[str, str]]]], None] = None):
+        self.paragraph_id = paragraph_id
+        self.paragraph_content = paragraph_content
+        self.tag_hierarchy = tag_hierarchy
+        self.existing_tags = existing_tags or []
+        self.custom_prompt = custom_prompt
+        self.num_suggestions = num_suggestions
+        self.temperature = temperature
+        self.top_p = top_p
+        self.callback = callback
+        self.created_at = time.time()
+        self.status = "pending"  # pending, processing, completed, failed
+        self.result = None
+        self.error = None
+
+
 class OllamaTagSuggester:
     """Handles Ollama integration for automatic tag suggestions using Pydantic."""
     
@@ -36,6 +60,10 @@ class OllamaTagSuggester:
         """
         self.client = ollama  # Set client first
         self.model_name = model_name or self._auto_detect_model()
+        self._request_queue = []
+        self._active_requests = {}
+        self._worker_thread = None
+        self._stop_worker = False
     
     def _auto_detect_model(self) -> str:
         """Auto-detect the best available model."""
@@ -149,11 +177,215 @@ class OllamaTagSuggester:
         except Exception:
             return []
     
+    def _start_worker_thread(self):
+        """Start the background worker thread if not already running."""
+        if self._worker_thread is None or not self._worker_thread.is_alive():
+            self._stop_worker = False
+            self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+            self._worker_thread.start()
+    
+    def _worker_loop(self):
+        """Background worker loop that processes tag suggestion requests."""
+        while not self._stop_worker:
+            # Process pending requests
+            if self._request_queue:
+                request = self._request_queue.pop(0)
+                self._process_request_async(request)
+            else:
+                # Sleep briefly to avoid busy waiting
+                time.sleep(0.1)
+    
+    def _process_request_async(self, request: AsyncTagSuggestionRequest):
+        """Process a tag suggestion request asynchronously."""
+        try:
+            request.status = "processing"
+            self._active_requests[request.paragraph_id] = request
+            
+            # Call the synchronous suggest_tags method with all parameters
+            result = self.suggest_tags(
+                request.paragraph_content,
+                request.tag_hierarchy,
+                request.existing_tags,
+                request.custom_prompt,
+                request.num_suggestions,
+                request.temperature,
+                request.top_p
+            )
+            
+            request.result = result
+            request.status = "completed"
+            
+            # Call callback if provided
+            if request.callback:
+                request.callback(request.paragraph_id, result)
+            
+            # Store result in a thread-safe way without accessing Streamlit context
+            session_key = f"async_ai_suggestions_{request.paragraph_id}"
+            self._store_result_thread_safe(session_key, {
+                'status': 'completed',
+                'result': result,
+                'timestamp': time.time()
+            })
+            
+        except Exception as e:
+            request.status = "failed"
+            request.error = str(e)
+            
+            # Call callback with error
+            if request.callback:
+                request.callback(request.paragraph_id, None)
+            
+            # Store error in a thread-safe way
+            session_key = f"async_ai_suggestions_{request.paragraph_id}"
+            self._store_result_thread_safe(session_key, {
+                'status': 'failed',
+                'error': str(e),
+                'timestamp': time.time()
+            })
+        
+        finally:
+            # Remove from active requests
+            self._active_requests.pop(request.paragraph_id, None)
+    
+    def _store_result_thread_safe(self, key: str, value: dict):
+        """Store result in a thread-safe manner without accessing Streamlit context."""
+        # Store in instance variable that can be checked by the main thread
+        if not hasattr(self, '_thread_results'):
+            self._thread_results = {}
+        self._thread_results[key] = value
+    
+    def _sync_thread_results_to_session_state(self):
+        """Sync thread results to session state from main thread."""
+        if hasattr(self, '_thread_results'):
+            try:
+                # Only access session state from main thread
+                for key, value in self._thread_results.items():
+                    st.session_state[key] = value
+                # Clear synced results
+                self._thread_results.clear()
+            except Exception:
+                # Ignore if Streamlit context is not available
+                pass
+    
+    def suggest_tags_async(self, paragraph_id: int, paragraph_content: str, tag_hierarchy: List[Dict[str, Any]], 
+                          existing_tags: List[str] = None, custom_prompt: str = None, 
+                          num_suggestions: int = 2, temperature: float = 0.3, top_p: float = 0.9,
+                          callback: Callable[[int, Optional[List[Dict[str, str]]]], None] = None) -> str:
+        """
+        Queue a tag suggestion request to be processed asynchronously.
+        
+        Args:
+            paragraph_id: Unique identifier for the paragraph
+            paragraph_content: The paragraph text to analyze
+            tag_hierarchy: List of all available tags with hierarchy
+            existing_tags: Tags already applied to this paragraph
+            custom_prompt: Custom prompt template to use
+            num_suggestions: Number of suggestions to generate (1-10)
+            temperature: Model temperature parameter (0.0-1.0)
+            top_p: Model top-p parameter (0.1-1.0)
+            callback: Optional callback function to call when complete
+            
+        Returns:
+            Request ID that can be used to check status
+        """
+        # Cancel any existing request for this paragraph
+        self.cancel_request(paragraph_id)
+        
+        # Create new request
+        request = AsyncTagSuggestionRequest(
+            paragraph_id=paragraph_id,
+            paragraph_content=paragraph_content,
+            tag_hierarchy=tag_hierarchy,
+            existing_tags=existing_tags,
+            custom_prompt=custom_prompt,
+            num_suggestions=num_suggestions,
+            temperature=temperature,
+            top_p=top_p,
+            callback=callback
+        )
+        
+        # Add to queue
+        self._request_queue.append(request)
+        
+        # Start worker thread if needed
+        self._start_worker_thread()
+        
+        # Store initial status in thread-safe way
+        session_key = f"async_ai_suggestions_{paragraph_id}"
+        self._store_result_thread_safe(session_key, {
+            'status': 'pending',
+            'timestamp': time.time()
+        })
+        
+        return f"request_{paragraph_id}_{int(time.time())}"
+    
+    def get_request_status(self, paragraph_id: int) -> Dict[str, Any]:
+        """
+        Get the status of an async request.
+        
+        Args:
+            paragraph_id: The paragraph ID
+            
+        Returns:
+            Dictionary with status information
+        """
+        session_key = f"async_ai_suggestions_{paragraph_id}"
+        
+        # Check session state first (only from main thread)
+        try:
+            if session_key in st.session_state:
+                return st.session_state[session_key]
+        except:
+            pass  # Not in Streamlit context
+        
+        # Check active requests
+        if paragraph_id in self._active_requests:
+            request = self._active_requests[paragraph_id]
+            return {
+                'status': request.status,
+                'result': request.result,
+                'error': request.error,
+                'timestamp': request.created_at
+            }
+        
+        # Check queue
+        for request in self._request_queue:
+            if request.paragraph_id == paragraph_id:
+                return {
+                    'status': 'pending',
+                    'timestamp': request.created_at
+                }
+        
+        return {'status': 'not_found'}
+    
+    def cancel_request(self, paragraph_id: int):
+        """Cancel a pending or active request for a paragraph."""
+        # Remove from queue
+        self._request_queue = [req for req in self._request_queue if req.paragraph_id != paragraph_id]
+        
+        # Remove from active requests (can't stop mid-processing, but will prevent callback)
+        if paragraph_id in self._active_requests:
+            self._active_requests[paragraph_id].callback = None
+        
+        # Clear session state (only from main thread)
+        session_key = f"async_ai_suggestions_{paragraph_id}"
+        try:
+            st.session_state.pop(session_key, None)
+        except:
+            pass  # Not in Streamlit context
+    
+    def stop_worker(self):
+        """Stop the background worker thread."""
+        self._stop_worker = True
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=1.0)
+    
     def suggest_tags(self, paragraph_content: str, tag_hierarchy: List[Dict[str, Any]], 
                     existing_tags: List[str] = None, custom_prompt: str = None, 
-                    num_suggestions: int = 2) -> Optional[List[Dict[str, str]]]:
+                    num_suggestions: int = 2, temperature: float = 0.3, top_p: float = 0.9) -> Optional[List[Dict[str, str]]]:
         """
         Get tag suggestions for a paragraph using Ollama with Pydantic structured output.
+        This is the synchronous version used internally by the async worker.
         
         Args:
             paragraph_content: The paragraph text to analyze
@@ -161,6 +393,8 @@ class OllamaTagSuggester:
             existing_tags: Tags already applied to this paragraph
             custom_prompt: Custom prompt template to use
             num_suggestions: Number of suggestions to generate (1-10)
+            temperature: Model temperature parameter (0.0-1.0)
+            top_p: Model top-p parameter (0.1-1.0)
             
         Returns:
             List of suggested tags with reasoning and confidence, or None if error
@@ -194,18 +428,6 @@ class OllamaTagSuggester:
             
             # Use Pydantic model to generate JSON schema
             response_schema = TagSuggestionsResponse.model_json_schema()
-            
-            # Get model parameters from Streamlit session state if available
-            temperature = 0.3  # Default
-            top_p = 0.9  # Default
-            
-            # Try to get parameters from Streamlit session state
-            try:
-                import streamlit as st
-                temperature = st.session_state.get('ai_temperature', 0.3)
-                top_p = st.session_state.get('ai_top_p', 0.9)
-            except:
-                pass  # Use defaults if Streamlit not available
             
             # Make the request to Ollama with structured output
             response = self.client.generate(
@@ -246,10 +468,10 @@ class OllamaTagSuggester:
             return suggestions
             
         except json.JSONDecodeError as e:
-            st.error(f"Error parsing AI response as JSON: {str(e)}")
+            # Don't try to show Streamlit errors from background thread
             return None
         except Exception as e:
-            st.error(f"Error getting tag suggestions: {str(e)}")
+            # Don't try to show Streamlit errors from background thread
             return None
     
     def _format_tag_hierarchy(self, tag_hierarchy: List[Dict[str, Any]]) -> str:

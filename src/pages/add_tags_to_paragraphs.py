@@ -2,7 +2,8 @@
 Add Tags to Paragraphs page module - Flashcard-style tagging workflow.
 """
 import streamlit as st
-from typing import Dict, Any
+import time
+from typing import Dict, Any, List
 from streamlit_shortcuts import shortcut_button, add_shortcuts
 from ..components.ui_components import FlashcardNavigator
 from ..utils.helpers import highlight_keywords, display_hierarchical_tags_with_indentation, display_matched_keywords
@@ -274,7 +275,7 @@ def _render_tagging_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseI
 
 
 def _render_ai_tag_suggestions(paragraph: Dict[str, Any], database: BaseDatabaseInterface) -> None:
-    """Render AI-powered tag suggestions section."""
+    """Render AI-powered tag suggestions section with async background processing."""
     st.markdown("### 🤖 AI Tag Suggestions")
     
     # Get current tags for this paragraph
@@ -289,110 +290,182 @@ def _render_ai_tag_suggestions(paragraph: Dict[str, Any], database: BaseDatabase
     use_custom_prompt = st.session_state.get('ai_use_custom_prompt', False)
     custom_prompt = st.session_state.get('ai_custom_prompt', None) if use_custom_prompt else None
     
-    # Create cache key that includes configuration parameters
-    config_hash = hash((num_suggestions, use_custom_prompt, custom_prompt))
-    cache_key = f"ai_suggestions_{paragraph['id']}_{config_hash}"
+    # Create suggester and check availability
+    suggester = create_ollama_tag_suggester()
     
-    # Check if we have cached suggestions for this paragraph with current config
-    if cache_key not in st.session_state:
-        # Clear old cache entries for this paragraph
-        old_keys = [key for key in st.session_state.keys() if key.startswith(f"ai_suggestions_{paragraph['id']}_")]
-        for old_key in old_keys:
-            st.session_state.pop(old_key, None)
+    if not suggester.is_available():
+        st.error("⚠️ Ollama is not available. Please ensure Ollama is running and the selected model is installed.")
+        return
+    
+    # Sync any thread results to session state
+    suggester._sync_thread_results_to_session_state()
+    
+    # Check for existing async request status
+    paragraph_id = paragraph['id']
+    request_status = suggester.get_request_status(paragraph_id)
+    
+    # Handle different request states
+    if request_status.get('status') == 'pending':
+        # Show pending status with option to cancel
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.info("🤖 AI is analyzing the paragraph... Please wait.")
+            # Add a progress indicator
+            progress_placeholder = st.empty()
+            with progress_placeholder:
+                st.progress(0.5, "Getting AI suggestions...")
         
-        # Create suggester and get suggestions
-        suggester = create_ollama_tag_suggester()
+        with col2:
+            if st.button("❌ Cancel", key=f"cancel_ai_{paragraph_id}"):
+                suggester.cancel_request(paragraph_id)
+                st.info("AI request cancelled.")
+                st.rerun()
         
-        if suggester.is_available():
-            with st.spinner("🤖 Getting AI tag suggestions..."):
-                suggestions = suggester.suggest_tags(
-                    paragraph['content'],
-                    all_tags,
-                    current_tag_names,
-                    custom_prompt=custom_prompt,
-                    num_suggestions=num_suggestions
-                )
-                st.session_state[cache_key] = suggestions
+        # Auto-refresh to check for completion (with a slower refresh rate to avoid constant reloading)
+        time.sleep(0.5)
+        st.rerun()
+        
+    elif request_status.get('status') == 'processing':
+        # Show processing status
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.info("🧠 AI is thinking... This may take a few moments.")
+            progress_placeholder = st.empty()
+            with progress_placeholder:
+                st.progress(0.8, "Processing with AI model...")
+        
+        with col2:
+            if st.button("❌ Cancel", key=f"cancel_ai_{paragraph_id}"):
+                suggester.cancel_request(paragraph_id)
+                st.info("AI request cancelled.")
+                st.rerun()
+        
+        # Auto-refresh to check for completion
+        time.sleep(1.0)
+        st.rerun()
+        
+    elif request_status.get('status') == 'completed':
+        # Display the results
+        suggestions = request_status.get('result')
+        
+        if suggestions:
+            # Show configuration info
+            config_info = f"**{len(suggestions)} suggestions"
+            if use_custom_prompt:
+                config_info += " (custom prompt)"
+            config_info += ":**"
+            st.markdown(config_info)
+            
+            for i, suggestion in enumerate(suggestions):
+                tag_name = suggestion.get('tag_name', 'Unknown')
+                confidence = suggestion.get('confidence', 'unknown')
+                reasoning = suggestion.get('reasoning', 'No reasoning provided')
+                
+                # Find the tag in the database to get its ID
+                tag_data = next((tag for tag in all_tags if tag['name'] == tag_name), None)
+                
+                if tag_data:
+                    # Color code based on confidence
+                    confidence_colors = {
+                        'high': '#28a745',
+                        'medium': '#ffc107', 
+                        'low': '#dc3545'
+                    }
+                    confidence_color = confidence_colors.get(confidence, '#6c757d')
+                    
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        st.markdown(f"""
+                        <div style="border: 1px solid #e0e0e0; padding: 12px; border-radius: 8px; margin-bottom: 10px; background-color: #f8f9fa;">
+                            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                <strong style="color: #007bff;">🏷️ {tag_name}</strong>
+                                <span style="background-color: {confidence_color}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 10px; font-weight: bold;">
+                                    {confidence.upper()}
+                                </span>
+                            </div>
+                            <div style="font-size: 14px; color: #6c757d; font-style: italic;">
+                                {reasoning}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        if tag_name not in current_tag_names:
+                            if st.button(
+                                "✨ Add", 
+                                key=f"add_ai_suggestion_{paragraph_id}_{i}",
+                                help=f"Add '{tag_name}' to this paragraph",
+                                type="primary"
+                            ):
+                                database.tag_paragraph(paragraph_id, tag_data['id'])
+                                st.success(f"✅ Added '{tag_name}'!")
+                                # Clear AI suggestion cache when a tag is manually added
+                                suggester.cancel_request(paragraph_id)
+                                st.rerun()
+                        else:
+                            st.markdown("✅ *Already added*")
+                else:
+                    st.warning(f"⚠️ Suggested tag '{tag_name}' not found in database")
+            
+            # Button to refresh suggestions
+            if st.button("🔄 Get New Suggestions", key=f"refresh_ai_{paragraph_id}"):
+                # Cancel any existing request and start a new one
+                suggester.cancel_request(paragraph_id)
+                _start_async_ai_request(suggester, paragraph, all_tags, current_tag_names, 
+                                      custom_prompt, num_suggestions)
+                st.rerun()
         else:
-            st.error("⚠️ Ollama is not available. Please ensure Ollama is running and the selected model is installed.")
-            return
+            st.info("No AI suggestions available for this paragraph.")
+            # Button to retry
+            if st.button("🔄 Try Again", key=f"retry_ai_{paragraph_id}"):
+                suggester.cancel_request(paragraph_id)
+                _start_async_ai_request(suggester, paragraph, all_tags, current_tag_names, 
+                                      custom_prompt, num_suggestions)
+                st.rerun()
     
-    suggestions = st.session_state.get(cache_key)
-    
-    if suggestions:
-        # Show configuration info
-        config_info = f"**{len(suggestions)} suggestions"
-        if use_custom_prompt:
-            config_info += " (custom prompt)"
-        config_info += ":**"
-        st.markdown(config_info)
+    elif request_status.get('status') == 'failed':
+        # Show error and option to retry
+        error_msg = request_status.get('error', 'Unknown error occurred')
+        st.error(f"❌ AI request failed: {error_msg}")
         
-        for i, suggestion in enumerate(suggestions):
-            tag_name = suggestion.get('tag_name', 'Unknown')
-            confidence = suggestion.get('confidence', 'unknown')
-            reasoning = suggestion.get('reasoning', 'No reasoning provided')
-            
-            # Find the tag in the database to get its ID
-            tag_data = next((tag for tag in all_tags if tag['name'] == tag_name), None)
-            
-            if tag_data:
-                # Color code based on confidence
-                confidence_colors = {
-                    'high': '#28a745',
-                    'medium': '#ffc107', 
-                    'low': '#dc3545'
-                }
-                confidence_color = confidence_colors.get(confidence, '#6c757d')
-                
-                col1, col2 = st.columns([3, 1])
-                
-                with col1:
-                    st.markdown(f"""
-                    <div style="border: 1px solid #e0e0e0; padding: 12px; border-radius: 8px; margin-bottom: 10px; background-color: #f8f9fa;">
-                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                            <strong style="color: #007bff;">🏷️ {tag_name}</strong>
-                            <span style="background-color: {confidence_color}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 10px; font-weight: bold;">
-                                {confidence.upper()}
-                            </span>
-                        </div>
-                        <div style="font-size: 14px; color: #6c757d; font-style: italic;">
-                            {reasoning}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col2:
-                    if tag_name not in current_tag_names:
-                        if st.button(
-                            "✨ Add", 
-                            key=f"add_ai_suggestion_{paragraph['id']}_{i}",
-                            help=f"Add '{tag_name}' to this paragraph",
-                            type="primary"
-                        ):
-                            database.tag_paragraph(paragraph['id'], tag_data['id'])
-                            st.success(f"✅ Added '{tag_name}'!")
-                            # Clear all AI suggestion caches for this paragraph
-                            old_keys = [key for key in st.session_state.keys() if key.startswith(f"ai_suggestions_{paragraph['id']}_")]
-                            for old_key in old_keys:
-                                st.session_state.pop(old_key, None)
-                            st.rerun()
-                    else:
-                        st.markdown("✅ *Already added*")
-            else:
-                st.warning(f"⚠️ Suggested tag '{tag_name}' not found in database")
-        
-        # Button to refresh suggestions
-        if st.button("🔄 Get New Suggestions", key=f"refresh_ai_{paragraph['id']}"):
-            # Clear all cached suggestions for this paragraph
-            old_keys = [key for key in st.session_state.keys() if key.startswith(f"ai_suggestions_{paragraph['id']}_")]
-            for old_key in old_keys:
-                st.session_state.pop(old_key, None)
+        if st.button("🔄 Try Again", key=f"retry_failed_ai_{paragraph_id}"):
+            suggester.cancel_request(paragraph_id)
+            _start_async_ai_request(suggester, paragraph, all_tags, current_tag_names, 
+                                  custom_prompt, num_suggestions)
             st.rerun()
     
     else:
-        st.info("No AI suggestions available for this paragraph.")
+        # No request in progress - show button to start one
+        if st.button("🚀 Get AI Suggestions", key=f"start_ai_{paragraph_id}", type="primary"):
+            _start_async_ai_request(suggester, paragraph, all_tags, current_tag_names, 
+                                  custom_prompt, num_suggestions)
+            st.rerun()
     
     st.divider()
+
+
+def _start_async_ai_request(suggester, paragraph: Dict[str, Any], all_tags: List[Dict[str, Any]], 
+                           current_tag_names: List[str], custom_prompt: str = None, 
+                           num_suggestions: int = 2) -> None:
+    """Start an asynchronous AI tag suggestion request."""
+    paragraph_id = paragraph['id']
+    
+    # Get AI model parameters from session state
+    temperature = st.session_state.get('ai_temperature', 0.3)
+    top_p = st.session_state.get('ai_top_p', 0.9)
+    
+    # Start the async request
+    suggester.suggest_tags_async(
+        paragraph_id=paragraph_id,
+        paragraph_content=paragraph['content'],
+        tag_hierarchy=all_tags,
+        existing_tags=current_tag_names,
+        custom_prompt=custom_prompt,
+        num_suggestions=num_suggestions,
+        temperature=temperature,
+        top_p=top_p
+    )
 
 
 def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatabaseInterface, navigator: FlashcardNavigator) -> None:
