@@ -3,6 +3,8 @@ Utility functions for the Conference Talks Analysis application.
 """
 import streamlit as st
 import random
+import re
+import urllib.parse
 from typing import List, Dict, Any
 from ..database.base_database import BaseDatabaseInterface  
 
@@ -184,7 +186,9 @@ def display_talk_info(paragraph_data: Dict[str, Any]) -> None:
     Args:
         paragraph_data: Dictionary containing talk information
     """
-    st.markdown(f"**Talk:** [{paragraph_data['talk_title']}]({paragraph_data['hyperlink']})")
+    # Create text fragment link that jumps to the specific paragraph
+    fragment_link = create_paragraph_link(paragraph_data)
+    st.markdown(f"**Talk:** [{paragraph_data['talk_title']}]({fragment_link})")
     st.markdown(f"**Speaker:** {paragraph_data['speaker']}")
     st.markdown(f"**Date:** {paragraph_data['conference_date']}")
     if paragraph_data.get('session'):
@@ -198,6 +202,9 @@ def display_enhanced_talk_info(paragraph_data: Dict[str, Any]) -> None:
     Args:
         paragraph_data: Dictionary containing talk information
     """
+    # Create text fragment link that jumps to the specific paragraph
+    fragment_link = create_paragraph_link(paragraph_data)
+    
     st.markdown(f"""
     <div style="text-align: center; background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin: 10px 0;">
         <h4 style="color: #1f4e7a; margin-bottom: 8px;">📖 {paragraph_data['talk_title']}</h4>
@@ -206,7 +213,7 @@ def display_enhanced_talk_info(paragraph_data: Dict[str, Any]) -> None:
             <strong>Date:</strong> {paragraph_data['conference_date']}
         </p>
         {f'<p style="color: #6c757d; margin: 4px 0;"><strong>Session:</strong> {paragraph_data.get("session", "N/A")}</p>' if paragraph_data.get('session') else ''}
-        {f'<p style="margin: 8px 0;"><a href="{paragraph_data["hyperlink"]}" target="_blank">🔗 View Original Talk</a></p>' if paragraph_data.get('hyperlink') else ''}
+        {f'<p style="margin: 8px 0;"><a href="{fragment_link}" target="_blank">🔗 View Original Talk</a></p>' if paragraph_data.get('hyperlink') else ''}
     </div>
     """, unsafe_allow_html=True)
 
@@ -568,55 +575,67 @@ def display_tag_breadcrumb(tag_id: int, db: BaseDatabaseInterface) -> str:
     return " > ".join(breadcrumb_parts)
 
 
-def display_compact_tag_list(tags: List[Dict], removable: bool = True, paragraph_id: int = None, db: BaseDatabaseInterface = None) -> None:
+def create_text_fragment_link(base_url: str, paragraph_content: str, max_words: int = 10) -> str:
     """
-    Display tags in a compact, visually appealing format.
+    Create a URL with text fragment that will scroll to the specific paragraph content.
+    Uses the #:~:text= syntax to highlight and scroll to matching text.
     
     Args:
-        tags: List of tag dictionaries
-        removable: Whether tags can be removed
-        paragraph_id: ID of paragraph (needed for removal)
-        db: Database instance (needed for removal)
-    """
-    if not tags:
-        st.info("No tags assigned.")
-        return
-    
-    # Group tags by hierarchy level for better display
-    root_tags = [tag for tag in tags if tag.get('parent_tag_id') is None]
-    child_tags = [tag for tag in tags if tag.get('parent_tag_id') is not None]
-    
-    # Display as styled badges
-    tag_html_parts = []
-    
-    for tag in root_tags:
-        breadcrumb = display_tag_breadcrumb(tag['id'], db) if db else tag['name']
-        if removable and paragraph_id and db:
-            tag_html_parts.append(f'''
-                <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                           color: white; padding: 4px 8px; border-radius: 12px; 
-                           font-size: 11px; margin: 2px; display: inline-block;">
-                    🏷️ {tag['name']}
-                </span>
-            ''')
-        else:
-            tag_html_parts.append(f'''
-                <span style="background: #f8f9fa; color: #495057; border: 1px solid #dee2e6;
-                           padding: 4px 8px; border-radius: 12px; 
-                           font-size: 11px; margin: 2px; display: inline-block;">
-                    🏷️ {tag['name']}
-                </span>
-            ''')
-    
-    if tag_html_parts:
-        st.markdown(f'<div>{"".join(tag_html_parts)}</div>', unsafe_allow_html=True)
+        base_url: The base URL of the webpage
+        paragraph_content: The paragraph text content
+        max_words: Maximum number of words to use for the text fragment (default: 10)
         
-        # Add remove buttons if needed
-        if removable and paragraph_id and db:
-            cols = st.columns(min(len(tags), 6))
-            for i, tag in enumerate(tags):
-                with cols[i % 6]:
-                    if st.button(f"❌", key=f"remove_compact_{paragraph_id}_{tag['id']}", 
-                               help=f"Remove {tag['name']}"):
-                        db.remove_tag_from_paragraph(paragraph_id, tag['id'])
-                        st.rerun()
+    Returns:
+        URL with text fragment that will jump to the paragraph
+    """
+    if not base_url or not paragraph_content:
+        return base_url
+    
+    # Clean the paragraph content for text fragment
+    # Remove HTML tags if any
+    clean_content = re.sub(r'<[^>]+>', '', paragraph_content)
+    
+    # Split into words and take the first few words
+    words = clean_content.split()
+    if not words:
+        return base_url
+    
+    # Take first max_words words for the text fragment
+    fragment_words = words[:min(max_words, len(words))]
+    fragment_text = ' '.join(fragment_words)
+    
+    # Clean up punctuation that might interfere with URL encoding
+    # Keep common punctuation but remove problematic characters
+    fragment_text = re.sub(r'[^\w\s\.,;:!?\-\'"()]', '', fragment_text)
+    
+    # URL encode the text fragment
+    encoded_fragment = urllib.parse.quote(fragment_text, safe='')
+    
+    # Create the text fragment URL
+    # Format: URL#:~:text=start_text[,end_text]
+    if base_url.endswith('/'):
+        base_url = base_url.rstrip('/')
+    
+    # Add text fragment to URL
+    fragment_url = f"{base_url}#:~:text={encoded_fragment}"
+    
+    return fragment_url
+
+
+def create_paragraph_link(paragraph_data: Dict[str, Any]) -> str:
+    """
+    Create a link to a specific paragraph using text fragments.
+    
+    Args:
+        paragraph_data: Dictionary containing paragraph information with 'hyperlink' and 'content'
+        
+    Returns:
+        URL that will jump to the specific paragraph when clicked
+    """
+    base_url = paragraph_data.get('hyperlink', '')
+    content = paragraph_data.get('content', '')
+    
+    if not base_url or not content:
+        return base_url
+    
+    return create_text_fragment_link(base_url, content)

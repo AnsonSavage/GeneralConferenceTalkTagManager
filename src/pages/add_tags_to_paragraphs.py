@@ -5,7 +5,7 @@ import streamlit as st
 from typing import Dict, Any
 from streamlit_shortcuts import shortcut_button, add_shortcuts
 from ..components.ui_components import FlashcardNavigator
-from ..utils.helpers import highlight_keywords, display_hierarchical_tags_with_indentation, display_matched_keywords
+from ..utils.helpers import highlight_keywords, display_hierarchical_tags_with_indentation, display_matched_keywords, create_paragraph_link
 from ..database.base_database import BaseDatabaseInterface
 
 
@@ -106,13 +106,15 @@ def _render_tagging_flashcard(paragraph: Dict[str, Any], database: BaseDatabaseI
         """, unsafe_allow_html=True)
         
         if paragraph['hyperlink']:
-            st.markdown(f"[🔗 View Original Talk]({paragraph['hyperlink']})")
+            # Create text fragment link that jumps to the specific paragraph
+            fragment_link = create_paragraph_link(paragraph)
+            st.markdown(f"[🔗 View Original Talk]({fragment_link})")
         
         # Display matched keywords prominently
         display_matched_keywords(paragraph)
         
         # Paragraph content with better visibility
-        st.markdown("### 📄 Paragraph Content")
+        # st.markdown("### 📄 Paragraph Content")
         content = paragraph['content']
         if paragraph.get('matched_keywords'):
             content = highlight_keywords(content, paragraph['matched_keywords'])

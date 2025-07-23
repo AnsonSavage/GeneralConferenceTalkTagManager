@@ -3,6 +3,7 @@ Markdown exporter for conference talk database content.
 """
 from typing import Dict, Any, List
 from .base_exporter import BaseExporter
+from .helpers import create_paragraph_link
 
 
 class MarkdownExporter(BaseExporter):
@@ -81,9 +82,11 @@ class MarkdownExporter(BaseExporter):
                     other_tags_str = ", ".join(sorted(other_tag_names))
                     markdown_content.append(f"  - **Also found under:** {other_tags_str}")
             
-            # Add source information with hyperlink
+            # Add source information with text fragment link
             if paragraph['hyperlink'] and paragraph['hyperlink'].strip():
-                markdown_content.append(f"  - **Source:** [{paragraph['speaker']} - {paragraph['talk_title']} ({paragraph['conference_date']})]({paragraph['hyperlink']})")
+                # Create text fragment link that jumps to the specific paragraph
+                fragment_link = create_paragraph_link(paragraph)
+                markdown_content.append(f"  - **Source:** [{paragraph['speaker']} - {paragraph['talk_title']} ({paragraph['conference_date']})]({fragment_link})")
             else:
                 markdown_content.append(f"  - **Source:** {paragraph['speaker']} - {paragraph['talk_title']} ({paragraph['conference_date']})")
             markdown_content.append("")
