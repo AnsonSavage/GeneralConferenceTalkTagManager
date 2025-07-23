@@ -146,6 +146,12 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
         # Create options dictionary with tag names as keys and IDs as values
         tag_options = {tag['name']: tag['id'] for tag in all_tags}
         
+        # Check if we need to clear the selectbox (set before widget creation)
+        clear_key = f"clear_tag_selector_{paragraph_id}"
+        if st.session_state.get(clear_key, False):
+            st.session_state[f"tag_selector_dropdown_{paragraph_id}"] = ""
+            st.session_state[clear_key] = False
+        
         # Add search functionality with selectbox
         selected_tag_name = st.selectbox(
             "🔍 Select a tag to add:",
@@ -167,6 +173,10 @@ def _render_streamlined_tagging_interface(paragraph_id: int, database: BaseDatab
                 
                 # Mark this tag as processed for this paragraph
                 st.session_state[last_processed_key] = selected_tag_name
+                
+                # Set flag to clear the selectbox on next run (before widget creation)
+                st.session_state[clear_key] = True
+                
                 st.rerun()
     
     # Option to create new tag if none selected
