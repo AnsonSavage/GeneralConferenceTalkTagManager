@@ -1,6 +1,6 @@
 # Conference Talks Analysis - Service-Oriented Architecture
 
-A Streamlit application for analyzing and tagging General Conference talks with a clean, service-oriented architecture following single responsibility principles.
+A Streamlit application for tagging General Conference talks.
 
 ## Known issues:
 * The delete backup button doesn't work
