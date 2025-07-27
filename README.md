@@ -1,4 +1,4 @@
-# Conference Talks Analysis - Service-Oriented Architecture
+# General Conference Talk Tag Manager
 
 A Streamlit application for tagging General Conference talks.
 
