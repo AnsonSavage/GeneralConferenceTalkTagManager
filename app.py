@@ -27,6 +27,7 @@ from src.pages.export import render_export_page
 from src.pages.import_data import render_import_page
 from src.pages.summary import render_summary_page
 from src.pages.backup import render_backup_page
+from src.pages.statistics import render_statistics_page
 
 
 def get_available_databases():
@@ -217,6 +218,8 @@ def main():
         render_summary_page(components['database'])
     elif page == "💾 Backup":
         render_backup_page(components['database'], components['backup_manager'])
+    elif page == "📈 Statistics":
+        render_statistics_page(components['database'])
     
     # Footer
     st.sidebar.markdown("---")

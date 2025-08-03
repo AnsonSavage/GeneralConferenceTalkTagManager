@@ -38,7 +38,8 @@ NAVIGATION_PAGES = [
     "📤 Export",
     "📥 Import",
     "💾 Backup",
-    "📊 Summary"
+    "📊 Summary",
+    "📈 Statistics"
 ]
 
 # Tips for sidebar

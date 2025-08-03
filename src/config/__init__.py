@@ -27,15 +27,6 @@ ITEMS_PER_PAGE = 10
 MAX_COLUMNS_FOR_DISPLAY = 4
 DEFAULT_FILTER_EXPANDED = True
 
-# Navigation pages
-NAVIGATION_PAGES = [
-    "🔍 Search & Tag",
-    "📄 Manage Paragraphs", 
-    "📚 Manage Talks",
-    "🏷️ Manage Tags",
-    "🔤 Manage Keywords",
-    "📊 Summary"
-]
 
 # Tips for sidebar
 SIDEBAR_TIPS = [
@@ -43,5 +34,6 @@ SIDEBAR_TIPS = [
     "• Only matching paragraphs are stored in database",
     "• Use specific keywords for better results",
     "• Create hierarchical tags for better organization",
-    "• Review paragraphs to track progress"
+    "• Review paragraphs to track progress",
+    "• Export/Import for backup and data sharing"
 ]
