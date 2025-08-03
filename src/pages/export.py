@@ -51,6 +51,15 @@ def render_export_page(database: BaseDatabaseInterface, export_manager) -> None:
         if filename != st.session_state.export_filename:
             st.session_state.export_filename = filename
         
+        # Markdown-specific options
+        if export_format == "📄 Markdown":
+            st.markdown("**Markdown Options:**")
+            bold_keywords = st.checkbox(
+                "Bold keywords in paragraph content",
+                value=True,
+                help="When enabled, matched keywords will be **bolded** in the paragraph text for better readability"
+            )
+        
         # Export location - different options for CSV vs Markdown
         if export_format == "📄 Markdown":
             export_location = st.selectbox(
@@ -136,7 +145,7 @@ def render_export_page(database: BaseDatabaseInterface, export_manager) -> None:
                     
                     # Generate and save export
                     if export_format == "📄 Markdown":
-                        content = export_manager.export_to_markdown(output_path)
+                        content = export_manager.export_to_markdown(output_path, bold_keywords=bold_keywords)
                         file_size = len(content.encode('utf-8'))
                         st.success("✅ Markdown export completed!")
                         st.info(f"**File:** {output_path}\n**Size:** {file_size:,} bytes")
@@ -171,7 +180,7 @@ def render_export_page(database: BaseDatabaseInterface, export_manager) -> None:
             if st.button("📋 Copy to Clipboard"):
                 with st.spinner("Generating content..."):
                     try:
-                        markdown_content = export_manager.export_to_markdown()
+                        markdown_content = export_manager.export_to_markdown(bold_keywords=bold_keywords)
                         
                         # Display content in a text area for easy copying
                         st.markdown("### Copy the content below:")

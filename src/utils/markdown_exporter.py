@@ -1,6 +1,7 @@
 """
 Markdown exporter for conference talk database content.
 """
+import re
 from typing import Dict, Any, List
 from .base_exporter import BaseExporter
 from .helpers import create_paragraph_link
@@ -8,6 +9,15 @@ from .helpers import create_paragraph_link
 
 class MarkdownExporter(BaseExporter):
     """Exports database content to markdown format."""
+    
+    def __init__(self, bold_keywords: bool = True):
+        """
+        Initialize the markdown exporter.
+        
+        Args:
+            bold_keywords: Whether to bold matched keywords in paragraph content (default: True)
+        """
+        self.bold_keywords = bold_keywords
     
     def export(self, export_data: Dict[str, Any], output_file: str = None) -> str:
         """
@@ -27,7 +37,12 @@ class MarkdownExporter(BaseExporter):
         # Generate markdown content
         markdown_content = []
         markdown_content.append("# Conference Talks Database Export\n")
-        markdown_content.append(f"*Generated on {export_timestamp}*\n")
+        markdown_content.append(f"*Generated on {export_timestamp}*")
+        
+        if self.bold_keywords:
+            markdown_content.append("*Keywords are bolded in paragraph content*")
+        
+        markdown_content.append("")
         
         # Process each root tag
         for root_tag in sorted(root_tags, key=lambda x: x['name']):
@@ -42,6 +57,39 @@ class MarkdownExporter(BaseExporter):
         
         return full_content
     
+    def _bold_keywords_in_content(self, content: str, keywords: List[str]) -> str:
+        """
+        Bold keywords in paragraph content for markdown output.
+        
+        Args:
+            content: The paragraph content
+            keywords: List of keywords to bold
+            
+        Returns:
+            Content with keywords wrapped in **bold** markdown syntax
+        """
+        if not keywords or not self.bold_keywords:
+            return content
+        
+        # Create a copy of content to modify
+        bolded_content = content
+        
+        # Sort keywords by length (longest first) to avoid partial replacements
+        sorted_keywords = sorted(keywords, key=len, reverse=True)
+        
+        for keyword in sorted_keywords:
+            # Use word boundaries to match whole words only
+            # Case-insensitive matching with word boundaries
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            
+            def replace_func(match):
+                # Preserve the original case of the matched text
+                return f"**{match.group()}**"
+            
+            bolded_content = re.sub(pattern, replace_func, bolded_content, flags=re.IGNORECASE)
+        
+        return bolded_content
+    
     def _export_tag_hierarchy(self, tag_info: Dict, markdown_content: List[str], tags_dict: Dict, level: int = 1):
         """Recursively export tag hierarchy to markdown"""
         # Create heading based on level
@@ -55,8 +103,13 @@ class MarkdownExporter(BaseExporter):
         
         # Process paragraphs for this tag
         for paragraph in tag_info['paragraphs']:
+            # Get paragraph content and optionally bold keywords
+            content = paragraph['content']
+            if paragraph.get('matched_keywords'):
+                content = self._bold_keywords_in_content(content, paragraph['matched_keywords'])
+            
             # Add paragraph content as bullet point
-            markdown_content.append(f"• {paragraph['content']}")
+            markdown_content.append(f"• {content}")
             
             # Add keywords if any
             if paragraph['matched_keywords']:

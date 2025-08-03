@@ -95,17 +95,18 @@ class ExportManager:
         export_data = self.prepare_export_data()
         return exporter.export(export_data, output_file)
     
-    def export_to_markdown(self, output_file: str = None) -> str:
+    def export_to_markdown(self, output_file: str = None, bold_keywords: bool = True) -> str:
         """
         Export database content to markdown format (backward compatibility).
         
         Args:
             output_file: Optional file path to write the markdown content
+            bold_keywords: Whether to bold matched keywords in paragraph content (default: True)
             
         Returns:
             The generated markdown content as a string
         """
-        markdown_exporter = MarkdownExporter()
+        markdown_exporter = MarkdownExporter(bold_keywords=bold_keywords)
         return self.export_with_exporter(markdown_exporter, output_file)
     
     def export_to_csv(self, output_file: str = None) -> str:
