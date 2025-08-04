@@ -2,7 +2,7 @@
 Statistics page module - Shows tag tree hierarchy with usage statistics.
 """
 import streamlit as st
-from typing import Dict, List, Any, Set
+from typing import Dict, List, Set
 from ..database.base_database import BaseDatabaseInterface
 
 
@@ -35,8 +35,11 @@ def render_statistics_page(database: BaseDatabaseInterface) -> None:
         st.session_state.selected_tags, database
     )
     
-    # Calculate descendant counts for filtered tags
+    # Calculate descendant counts for filtered tags (both total and unique)
     descendant_counts = _calculate_descendant_counts(filtered_stats, tag_dict, st.session_state.selected_tags)
+    unique_descendant_counts = _calculate_unique_descendant_counts(
+        filtered_stats, tag_dict, st.session_state.selected_tags, database
+    )
     
     # Tag selection controls
     st.markdown("### 🎛️ Tag Selection")
@@ -105,7 +108,7 @@ def render_statistics_page(database: BaseDatabaseInterface) -> None:
         # Render each root tag and its hierarchy with checkboxes
         for i, root_tag in enumerate(root_tags):
             _render_tag_with_statistics_and_checkbox(
-                root_tag, tag_dict, descendant_counts, filtered_total_paragraphs, 
+                root_tag, tag_dict, descendant_counts, unique_descendant_counts, filtered_total_paragraphs, 
                 st.session_state.selected_tags, level=0
             )
             if i < len(root_tags) - 1:
@@ -196,10 +199,49 @@ def _calculate_descendant_counts(
     return descendant_counts
 
 
+def _calculate_unique_descendant_counts(
+    tag_stats: List[Dict], 
+    tag_dict: Dict[int, Dict], 
+    selected_tag_ids: Set[int],
+    database: BaseDatabaseInterface
+) -> Dict[int, int]:
+    """Calculate the unique paragraph count including descendants for selected tags only."""
+    unique_descendant_counts = {}
+    
+    def get_unique_paragraphs_for_tag_and_descendants(tag_id: int) -> Set[int]:
+        """Get unique paragraph IDs for a tag and all its descendants."""
+        if tag_id in unique_descendant_counts:
+            # Return cached result if available (but we need to recalculate for sets)
+            pass
+        
+        unique_paragraph_ids = set()
+        
+        # Add paragraphs from this tag if it's selected
+        if tag_id in selected_tag_ids:
+            paragraphs = database.get_paragraphs_by_tag(tag_id)
+            unique_paragraph_ids.update(p['id'] for p in paragraphs)
+        
+        # Add paragraphs from all children (only if they're selected)
+        children = [t for t in tag_stats if t['parent_tag_id'] == tag_id]
+        for child in children:
+            child_paragraph_ids = get_unique_paragraphs_for_tag_and_descendants(child['id'])
+            unique_paragraph_ids.update(child_paragraph_ids)
+        
+        return unique_paragraph_ids
+    
+    # Calculate unique counts for all tags
+    for tag in tag_stats:
+        unique_paragraph_ids = get_unique_paragraphs_for_tag_and_descendants(tag['id'])
+        unique_descendant_counts[tag['id']] = len(unique_paragraph_ids)
+    
+    return unique_descendant_counts
+
+
 def _render_tag_with_statistics_and_checkbox(
     tag: Dict, 
     tag_dict: Dict[int, Dict], 
     descendant_counts: Dict[int, int],
+    unique_descendant_counts: Dict[int, int],
     total_paragraphs: int,
     selected_tag_ids: Set[int],
     level: int = 0,
@@ -224,10 +266,12 @@ def _render_tag_with_statistics_and_checkbox(
     # Get statistics (considering selection)
     direct_count = tag['usage_count'] if tag['id'] in selected_tag_ids else 0
     total_count = descendant_counts.get(tag['id'], direct_count)
+    unique_count = unique_descendant_counts.get(tag['id'], direct_count)
     
     # Calculate percentages
     direct_percentage = (direct_count / total_paragraphs * 100) if total_paragraphs > 0 else 0
     total_percentage = (total_count / total_paragraphs * 100) if total_paragraphs > 0 else 0
+    unique_percentage = (unique_count / total_paragraphs * 100) if total_paragraphs > 0 else 0
     
     # Calculate percentage of parent (if applicable)
     parent_percentage = None
@@ -284,9 +328,16 @@ def _render_tag_with_statistics_and_checkbox(
             elif is_selected:
                 stats_parts.append("**Direct:** 0")
             
-            # Total matches (including descendants)
+            # Total matches (including descendants) - only show if different from direct
             if total_count != direct_count and total_count > 0:
                 stats_parts.append(f"**Total (incl. descendants):** {total_count} ({total_percentage:.1f}%)")
+            
+            # Unique matches (including descendants) - only show if different from total
+            if unique_count != total_count and unique_count > 0:
+                stats_parts.append(f"**Unique (incl. descendants):** {unique_count} ({unique_percentage:.1f}%)")
+            elif unique_count > 0 and total_count == 0:
+                # Show unique even if total is 0 (shouldn't happen, but for safety)
+                stats_parts.append(f"**Unique (incl. descendants):** {unique_count} ({unique_percentage:.1f}%)")
             
             # Parent percentage
             if parent_percentage is not None and total_count > 0:
@@ -306,17 +357,18 @@ def _render_tag_with_statistics_and_checkbox(
     
     with progress_col:
         # Progress bar for visualization (only if selected and has counts)
-        if is_selected and total_count > 0 and total_paragraphs > 0:
-            progress_value = min(total_percentage / 100, 1.0)
-            st.progress(progress_value, text=f"{total_percentage:.1f}%")
-        elif total_count > 0:
+        if is_selected and unique_count > 0 and total_paragraphs > 0:
+            # Use unique count for progress visualization as it's more accurate
+            progress_value = min(unique_percentage / 100, 1.0)
+            st.progress(progress_value, text=f"{unique_percentage:.1f}%")
+        elif unique_count > 0:
             # Show grayed out progress for unselected tags with selected descendants
-            st.markdown(f"<small style='color: #999;'>{total_percentage:.1f}%</small>", 
+            st.markdown(f"<small style='color: #999;'>{unique_percentage:.1f}%</small>", 
                        unsafe_allow_html=True)
     
     # Render children
     children = [t for t in tag_dict.values() if t['parent_tag_id'] == tag['id']]
-    children.sort(key=lambda x: descendant_counts.get(x['id'], 0), reverse=True)  # Sort by total usage
+    children.sort(key=lambda x: unique_descendant_counts.get(x['id'], 0), reverse=True)  # Sort by unique usage
     
     if children:
         # Update parent prefixes for children
@@ -330,8 +382,8 @@ def _render_tag_with_statistics_and_checkbox(
         for j, child in enumerate(children):
             is_last_child = (j == len(children) - 1)
             _render_tag_with_statistics_and_checkbox(
-                child, tag_dict, descendant_counts, total_paragraphs, selected_tag_ids,
-                level + 1, is_last_child, new_parent_prefixes
+                child, tag_dict, descendant_counts, unique_descendant_counts, total_paragraphs, 
+                selected_tag_ids, level + 1, is_last_child, new_parent_prefixes
             )
 
 
