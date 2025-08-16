@@ -184,7 +184,7 @@ def _render_paragraph_summary(paragraphs, filters, search_filters):
         st.info(f"🔍 Active search filters: {', '.join(active_filters)}")
 
 
-def _render_list_view(paragraphs, database: BaseDatabaseInterface, filters, search_filters):
+def _render_list_view(paragraphs, database: BaseDatabaseInterface, filters, search_filters, max_content_length: int = None):
     """Render paragraphs in a list view for quick scanning and editing."""
     st.subheader("📋 Paragraph List")
     
@@ -240,8 +240,8 @@ def _render_list_view(paragraphs, database: BaseDatabaseInterface, filters, sear
             
             # Highlight content based on search filters
             content = paragraph['content']
-            if len(content) > 300:
-                content = content[:300] + "..."
+            if max_content_length is not None and len(content) > max_content_length:
+                content = content[:max_content_length] + "..."
             
             # Highlight search terms
             content = _highlight_search_terms(content, search_filters)

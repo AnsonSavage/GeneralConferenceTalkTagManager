@@ -35,10 +35,18 @@ def render_statistics_page(database: BaseDatabaseInterface) -> None:
         st.session_state.selected_tags, database
     )
     
-    # Calculate descendant counts for filtered tags (both total and unique)
+    # Calculate descendant counts for filtered tags (both total and unique) - paragraphs
     descendant_counts = _calculate_descendant_counts(filtered_stats, tag_dict, st.session_state.selected_tags)
     unique_descendant_counts = _calculate_unique_descendant_counts(
         filtered_stats, tag_dict, st.session_state.selected_tags, database
+    )
+
+    # Calculate talk-based metrics
+    talk_counts = _calculate_talk_based_counts(
+        filtered_stats, tag_dict, st.session_state.selected_tags, database
+    )
+    filtered_total_talks = _calculate_filtered_total_talks(
+        st.session_state.selected_tags, database
     )
     
     # Tag selection controls
@@ -102,19 +110,39 @@ def render_statistics_page(database: BaseDatabaseInterface) -> None:
     else:
         st.markdown(f"**Total paragraphs in database:** {total_paragraphs}")
     
-    if filtered_total_paragraphs > 0:
+    # Show talk totals
+    try:
+        export_stats = database.get_export_statistics()
+        total_talks_all = export_stats.get('total_talks', 0)
+    except Exception:
+        total_talks_all = 0
+    
+    if filtered_total_talks != total_talks_all:
+        st.markdown(f"**Total talks (all tags):** {total_talks_all}")
+        st.markdown(f"**Total talks (selected tags):** {filtered_total_talks}")
+        st.caption("Percentages are calculated based on selected tags only")
+    else:
+        st.markdown(f"**Total talks in database:** {total_talks_all}")
+    
+    if filtered_total_paragraphs > 0 or filtered_total_talks > 0:
         st.divider()
         
         # Render each root tag and its hierarchy with checkboxes
         for i, root_tag in enumerate(root_tags):
             _render_tag_with_statistics_and_checkbox(
-                root_tag, tag_dict, descendant_counts, unique_descendant_counts, filtered_total_paragraphs, 
-                st.session_state.selected_tags, level=0
+                root_tag, tag_dict,
+                descendant_counts, unique_descendant_counts, filtered_total_paragraphs,
+                st.session_state.selected_tags,
+                talk_counts['direct_talk_counts'],
+                talk_counts['total_talk_descendant_counts'],
+                talk_counts['unique_talk_descendant_counts'],
+                filtered_total_talks,
+                level=0
             )
             if i < len(root_tags) - 1:
                 st.divider()
     else:
-        st.warning("No paragraphs found for the selected tags.")
+        st.warning("No paragraphs or talks found for the selected tags.")
 
 
 def _filter_tag_statistics(
@@ -150,6 +178,17 @@ def _calculate_filtered_total_paragraphs(selected_tag_ids: Set[int], database: B
         unique_paragraph_ids.update(p['id'] for p in paragraphs)
     
     return len(unique_paragraph_ids)
+
+
+def _calculate_filtered_total_talks(selected_tag_ids: Set[int], database: BaseDatabaseInterface) -> int:
+    """Calculate total unique talks that have any of the selected tags (via paragraphs)."""
+    if not selected_tag_ids:
+        return 0
+    unique_talk_ids = set()
+    for tag_id in selected_tag_ids:
+        paragraphs = database.get_paragraphs_by_tag(tag_id)
+        unique_talk_ids.update(p['talk_id'] for p in paragraphs)
+    return len(unique_talk_ids)
 
 
 def _get_leaf_tags(tag_stats: List[Dict]) -> List[Dict]:
@@ -210,10 +249,7 @@ def _calculate_unique_descendant_counts(
     
     def get_unique_paragraphs_for_tag_and_descendants(tag_id: int) -> Set[int]:
         """Get unique paragraph IDs for a tag and all its descendants."""
-        if tag_id in unique_descendant_counts:
-            # Return cached result if available (but we need to recalculate for sets)
-            pass
-        
+        # Build the set recursively
         unique_paragraph_ids = set()
         
         # Add paragraphs from this tag if it's selected
@@ -237,6 +273,70 @@ def _calculate_unique_descendant_counts(
     return unique_descendant_counts
 
 
+def _calculate_talk_based_counts(
+    tag_stats: List[Dict],
+    tag_dict: Dict[int, Dict],
+    selected_tag_ids: Set[int],
+    database: BaseDatabaseInterface
+) -> Dict[str, Dict[int, int]]:
+    """Calculate direct, total (non-unique), and unique talk counts including descendants."""
+    direct_talk_counts: Dict[int, int] = {}
+    total_talk_descendant_counts: Dict[int, int] = {}
+    unique_talk_descendant_counts: Dict[int, int] = {}
+
+    # Cache talk sets per tag to avoid duplicate DB calls
+    talk_set_cache: Dict[int, Set[int]] = {}
+
+    def get_direct_talk_set(tag_id: int) -> Set[int]:
+        if tag_id in talk_set_cache:
+            return talk_set_cache[tag_id]
+        talks = set()
+        if tag_id in selected_tag_ids:
+            paragraphs = database.get_paragraphs_by_tag(tag_id)
+            talks.update(p['talk_id'] for p in paragraphs)
+        talk_set_cache[tag_id] = talks
+        return talks
+
+    def compute_totals(tag_id: int) -> None:
+        # Direct talks
+        direct_set = get_direct_talk_set(tag_id)
+        direct_talk_counts[tag_id] = len(direct_set)
+        
+        # Sum totals from children (non-unique)
+        children = [t for t in tag_stats if t['parent_tag_id'] == tag_id]
+        child_total_sum = 0
+        child_unique_set: Set[int] = set()
+        for child in children:
+            compute_totals(child['id'])
+            child_total_sum += total_talk_descendant_counts[child['id']]
+            child_unique_set.update(_get_unique_talk_set(child['id']))
+        
+        total_talk_descendant_counts[tag_id] = (len(direct_set) if tag_id in selected_tag_ids else 0) + child_total_sum
+        unique_talk_descendant_counts[tag_id] = len((direct_set if tag_id in selected_tag_ids else set()) | child_unique_set)
+
+    # Helper to build unique set for a tag and descendants
+    unique_talk_set_cache: Dict[int, Set[int]] = {}
+    def _get_unique_talk_set(tag_id: int) -> Set[int]:
+        if tag_id in unique_talk_set_cache:
+            return unique_talk_set_cache[tag_id]
+        unique_set = set(get_direct_talk_set(tag_id)) if tag_id in selected_tag_ids else set()
+        for child in [t for t in tag_stats if t['parent_tag_id'] == tag_id]:
+            unique_set.update(_get_unique_talk_set(child['id']))
+        unique_talk_set_cache[tag_id] = unique_set
+        return unique_set
+
+    # Compute for all tags
+    for tag in tag_stats:
+        if tag['id'] not in direct_talk_counts:
+            compute_totals(tag['id'])
+
+    return {
+        'direct_talk_counts': direct_talk_counts,
+        'total_talk_descendant_counts': total_talk_descendant_counts,
+        'unique_talk_descendant_counts': unique_talk_descendant_counts,
+    }
+
+
 def _render_tag_with_statistics_and_checkbox(
     tag: Dict, 
     tag_dict: Dict[int, Dict], 
@@ -244,6 +344,10 @@ def _render_tag_with_statistics_and_checkbox(
     unique_descendant_counts: Dict[int, int],
     total_paragraphs: int,
     selected_tag_ids: Set[int],
+    direct_talk_counts: Dict[int, int],
+    total_talk_descendant_counts: Dict[int, int],
+    unique_talk_descendant_counts: Dict[int, int],
+    total_talks: int,
     level: int = 0,
     is_last: bool = True,
     parent_prefixes: List[str] = None
@@ -263,17 +367,27 @@ def _render_tag_with_statistics_and_checkbox(
             prefix_parts.append("├─ ")
         prefix = "".join(prefix_parts)
     
-    # Get statistics (considering selection)
+    # Get paragraph statistics (considering selection)
     direct_count = tag['usage_count'] if tag['id'] in selected_tag_ids else 0
     total_count = descendant_counts.get(tag['id'], direct_count)
     unique_count = unique_descendant_counts.get(tag['id'], direct_count)
+
+    # Get talk statistics (considering selection)
+    direct_talks = direct_talk_counts.get(tag['id'], 0) if tag['id'] in selected_tag_ids else 0
+    total_talks_count = total_talk_descendant_counts.get(tag['id'], direct_talks)
+    unique_talks_count = unique_talk_descendant_counts.get(tag['id'], direct_talks)
     
-    # Calculate percentages
+    # Calculate percentages (paragraph-based)
     direct_percentage = (direct_count / total_paragraphs * 100) if total_paragraphs > 0 else 0
     total_percentage = (total_count / total_paragraphs * 100) if total_paragraphs > 0 else 0
     unique_percentage = (unique_count / total_paragraphs * 100) if total_paragraphs > 0 else 0
+
+    # Calculate percentages (talk-based)
+    direct_talks_pct = (direct_talks / total_talks * 100) if total_talks > 0 else 0
+    total_talks_pct = (total_talks_count / total_talks * 100) if total_talks > 0 else 0
+    unique_talks_pct = (unique_talks_count / total_talks * 100) if total_talks > 0 else 0
     
-    # Calculate percentage of parent (if applicable)
+    # Calculate percentage of parent (paragraphs) if applicable
     parent_percentage = None
     if tag['parent_tag_id'] and tag['parent_tag_id'] in descendant_counts:
         parent_total = descendant_counts[tag['parent_tag_id']]
@@ -319,27 +433,26 @@ def _render_tag_with_statistics_and_checkbox(
         st.markdown(tag_display)
         
         # Statistics display (only show if selected or has selected descendants)
-        if is_selected or total_count > 0:
+        if is_selected or total_count > 0 or total_talks_count > 0:
             stats_parts = []
             
-            # Direct matches
-            if direct_count > 0:
-                stats_parts.append(f"**Direct:** {direct_count} ({direct_percentage:.1f}%)")
-            elif is_selected:
-                stats_parts.append("**Direct:** 0")
-            
-            # Total matches (including descendants) - only show if different from direct
+            # Paragraph stats
+            if direct_count > 0 or is_selected:
+                stats_parts.append(f"**Direct paragraphs:** {direct_count} ({direct_percentage:.1f}%)")
             if total_count != direct_count and total_count > 0:
-                stats_parts.append(f"**Total (incl. descendants):** {total_count} ({total_percentage:.1f}%)")
-            
-            # Unique matches (including descendants) - only show if different from total
+                stats_parts.append(f"**Total paragraphs (incl. descendants):** {total_count} ({total_percentage:.1f}%)")
             if unique_count != total_count and unique_count > 0:
-                stats_parts.append(f"**Unique (incl. descendants):** {unique_count} ({unique_percentage:.1f}%)")
-            elif unique_count > 0 and total_count == 0:
-                # Show unique even if total is 0 (shouldn't happen, but for safety)
-                stats_parts.append(f"**Unique (incl. descendants):** {unique_count} ({unique_percentage:.1f}%)")
+                stats_parts.append(f"**Unique paragraphs (incl. descendants):** {unique_count} ({unique_percentage:.1f}%)")
             
-            # Parent percentage
+            # Talk stats
+            if direct_talks > 0 or is_selected:
+                stats_parts.append(f"**Direct talks:** {direct_talks} ({direct_talks_pct:.1f}%)")
+            if total_talks_count != direct_talks and total_talks_count > 0:
+                stats_parts.append(f"**Total talks (incl. descendants):** {total_talks_count} ({total_talks_pct:.1f}%)")
+            if unique_talks_count != total_talks_count and unique_talks_count > 0:
+                stats_parts.append(f"**Unique talks (incl. descendants):** {unique_talks_count} ({unique_talks_pct:.1f}%)")
+            
+            # Parent percentage (paragraph-based)
             if parent_percentage is not None and total_count > 0:
                 stats_parts.append(f"**Of parent:** {parent_percentage:.1f}%")
             
@@ -356,15 +469,17 @@ def _render_tag_with_statistics_and_checkbox(
                            unsafe_allow_html=True)
     
     with progress_col:
-        # Progress bar for visualization (only if selected and has counts)
+        # Progress bar for visualization (use unique paragraphs by default)
         if is_selected and unique_count > 0 and total_paragraphs > 0:
-            # Use unique count for progress visualization as it's more accurate
             progress_value = min(unique_percentage / 100, 1.0)
-            st.progress(progress_value, text=f"{unique_percentage:.1f}%")
+            st.progress(progress_value, text=f"{unique_percentage:.1f}% para")
         elif unique_count > 0:
-            # Show grayed out progress for unselected tags with selected descendants
-            st.markdown(f"<small style='color: #999;'>{unique_percentage:.1f}%</small>", 
+            st.markdown(f"<small style='color: #999;'>{unique_percentage:.1f}% para</small>", 
                        unsafe_allow_html=True)
+        # Also show talks percentage as text for quick reference
+        if unique_talks_count > 0 and total_talks > 0:
+            st.markdown(f"<small style='color: #666;'>{unique_talks_pct:.1f}% talks</small>", 
+                        unsafe_allow_html=True)
     
     # Render children
     children = [t for t in tag_dict.values() if t['parent_tag_id'] == tag['id']]
@@ -383,7 +498,8 @@ def _render_tag_with_statistics_and_checkbox(
             is_last_child = (j == len(children) - 1)
             _render_tag_with_statistics_and_checkbox(
                 child, tag_dict, descendant_counts, unique_descendant_counts, total_paragraphs, 
-                selected_tag_ids, level + 1, is_last_child, new_parent_prefixes
+                selected_tag_ids, direct_talk_counts, total_talk_descendant_counts, unique_talk_descendant_counts, 
+                total_talks, level + 1, is_last_child, new_parent_prefixes
             )
 
 
@@ -415,6 +531,16 @@ def _render_summary_statistics(database: BaseDatabaseInterface) -> None:
                 st.metric("Tagged %", f"{tagged_percentage:.1f}%")
             else:
                 st.metric("Tagged %", "0%")
+        
+        # Additional talk-level summary
+        col5, col6 = st.columns(2)
+        with col5:
+            st.metric("Total Talks", stats.get('total_talks', 0))
+        with col6:
+            tagged_talks = stats.get('tagged_talks', 0)
+            total_talks = stats.get('total_talks', 0)
+            pct = (tagged_talks / total_talks * 100) if total_talks else 0
+            st.metric("Tagged Talks", f"{tagged_talks} ({pct:.1f}%)")
     
     except Exception as e:
         st.error(f"Could not load summary statistics: {e}")

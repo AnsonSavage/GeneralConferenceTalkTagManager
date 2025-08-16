@@ -386,8 +386,6 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         
         results = []
         for row in rows:
-            matched_keywords = json.loads(row[4]) if row[4] else []
-            
             # Find which keywords actually matched
             actual_matches = []
             content_lower = row[3].lower()
@@ -579,6 +577,20 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         cursor.execute("SELECT COUNT(DISTINCT keyword_id) FROM paragraph_keywords")
         used_keywords = cursor.fetchone()[0]
         
+        # Talk statistics
+        cursor.execute("SELECT COUNT(*) FROM talks")
+        total_talks = cursor.fetchone()[0]
+        
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT t.id)
+            FROM talks t
+            JOIN paragraphs p ON t.id = p.talk_id
+            JOIN paragraph_tags pt ON p.id = pt.paragraph_id
+            """
+        )
+        tagged_talks = cursor.fetchone()[0]
+        
         conn.close()
         return {
             'total_tags': total_tags,
@@ -589,7 +601,9 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
             'untagged_paragraphs': total_paragraphs - tagged_paragraphs,
             'paragraphs_with_notes': paragraphs_with_notes,
             'total_keywords': total_keywords,
-            'used_keywords': used_keywords
+            'used_keywords': used_keywords,
+            'total_talks': total_talks,
+            'tagged_talks': tagged_talks,
         }
     
     @override
