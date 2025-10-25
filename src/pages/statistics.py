@@ -10,6 +10,20 @@ from typing import Any, Dict, List, Set, Tuple
 from ..database.base_database import BaseDatabaseInterface
 
 
+BASE_COLOR_PALETTE = [
+    "#4E79A7",
+    "#F28E2B",
+    "#E15759",
+    "#76B7B2",
+    "#59A14F",
+    "#EDC948",
+    "#B07AA1",
+    "#FF9DA7",
+    "#9C755F",
+    "#BAB0AC",
+]
+
+
 def render_statistics_page(database: BaseDatabaseInterface) -> None:
     """Render the Statistics page showing tag hierarchy with usage statistics."""
     st.header("📊 Tag Statistics")
@@ -33,6 +47,7 @@ def render_statistics_page(database: BaseDatabaseInterface) -> None:
     tag_dict = {tag['id']: tag for tag in tag_stats}
     root_tags = [tag for tag in tag_stats if tag['parent_tag_id'] is None]
     children_map = _build_children_map(tag_stats)
+    tag_color_map = _assign_base_colors_to_tags(tag_stats)
     
     # Filter statistics based on selected tags
     filtered_stats = _filter_tag_statistics(tag_stats, st.session_state.selected_tags, database)
@@ -237,8 +252,68 @@ def render_statistics_page(database: BaseDatabaseInterface) -> None:
                     f"Trend: y = {tag_slope:.2f}x + {tag_intercept:.2f}; R² = {tag_r_squared:.3f}"
                 )
     
+    composition_section_rendered = False
+    candidate_parents: List[Tuple[Dict[str, Any], List[int]]] = []
+    for tag in tag_stats:
+        child_ids = [
+            child_id for child_id in children_map.get(tag['id'], [])
+            if child_id in st.session_state.selected_tags
+        ]
+        if tag['id'] in st.session_state.selected_tags and child_ids:
+            candidate_parents.append((tag, child_ids))
+
+    if candidate_parents:
+        st.divider()
+        st.markdown("### 🥧 Category Composition (Immediate Children)")
+        filter_text = st.text_input(
+            "Show pie charts for categories containing (optional)",
+            key="statistics_composition_filter",
+            help=(
+                "Type part of a category name (comma-separated for multiple) to display its "
+                "subcategories' composition. Leave blank to show all matching categories."
+            ),
+        ).strip()
+        filter_terms = {
+            term.strip().lower() for term in filter_text.split(",") if term.strip()
+        }
+
+        paragraph_cache: Dict[int, Set[int]] = {}
+        charts_rendered = 0
+        row_columns: Tuple[Any, Any] = (None, None)
+        for tag, child_ids in candidate_parents:
+            if filter_terms:
+                name_lower = tag['name'].lower()
+                if not any(term in name_lower for term in filter_terms):
+                    continue
+
+            segments, total_count = _calculate_category_composition_segments(
+                child_tag_ids=child_ids,
+                database=database,
+                paragraph_cache=paragraph_cache,
+                tag_dict=tag_dict,
+                base_color_map=tag_color_map,
+            )
+            if not segments:
+                continue
+
+            if charts_rendered % 2 == 0:
+                row_columns = st.columns(2)
+            target_column = row_columns[charts_rendered % 2]
+            with target_column:
+                chart = _create_category_composition_chart(segments, title=tag['name'])
+                st.altair_chart(chart, use_container_width=True)
+                st.caption(
+                    f"{total_count} paragraphs across {len(child_ids)} subcategories"
+                )
+            charts_rendered += 1
+
+        if charts_rendered == 0:
+            st.info("No matching categories with overlapping subcategory usage found.")
+        else:
+            composition_section_rendered = True
+
     if filtered_total_paragraphs > 0 or filtered_total_talks > 0:
-        if not histogram_section_rendered:
+        if composition_section_rendered or not histogram_section_rendered:
             st.divider()
         
         # Render each root tag and its hierarchy with checkboxes
@@ -364,6 +439,139 @@ def _combine_time_series_for_tags(
         {'conference_date': date_key, 'paragraph_count': aggregated_counts[date_key]}
         for date_key in sorted(aggregated_counts.keys())
     ]
+
+
+def _assign_base_colors_to_tags(tag_stats: List[Dict[str, Any]]) -> Dict[int, str]:
+    """Assign a consistent base color to each tag for visualization."""
+    color_map: Dict[int, str] = {}
+    for index, tag in enumerate(sorted(tag_stats, key=lambda item: item['id'])):
+        color_map[tag['id']] = BASE_COLOR_PALETTE[index % len(BASE_COLOR_PALETTE)]
+    return color_map
+
+
+def _get_paragraph_ids_for_tag(
+    tag_id: int,
+    database: BaseDatabaseInterface,
+    paragraph_cache: Dict[int, Set[int]]
+) -> Set[int]:
+    """Fetch and cache paragraph IDs for a tag."""
+    if tag_id not in paragraph_cache:
+        paragraphs = database.get_paragraphs_by_tag(tag_id)
+        paragraph_cache[tag_id] = {p['id'] for p in paragraphs}
+    return paragraph_cache[tag_id]
+
+
+def _hex_to_rgb(color: str) -> Tuple[int, int, int]:
+    """Convert a hex color string to an RGB tuple."""
+    hex_color = color.lstrip('#')
+    if len(hex_color) != 6:
+        return (128, 128, 128)
+    return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _blend_segment_color(
+    combo_tag_ids: Tuple[int, ...],
+    base_color_map: Dict[int, str]
+) -> str:
+    """Blend base colors for a combination of tags."""
+    rgb_values = [_hex_to_rgb(base_color_map.get(tag_id, BASE_COLOR_PALETTE[0])) for tag_id in combo_tag_ids]
+    count = max(1, len(rgb_values))
+    averaged = tuple(
+        int(round(sum(value[channel] for value in rgb_values) / count))
+        for channel in range(3)
+    )
+    alpha = 0.55 if count == 1 else min(1.0, 0.55 + 0.15 * (count - 1))
+    return f"rgba({averaged[0]}, {averaged[1]}, {averaged[2]}, {alpha:.2f})"
+
+
+def _calculate_category_composition_segments(
+    child_tag_ids: List[int],
+    database: BaseDatabaseInterface,
+    paragraph_cache: Dict[int, Set[int]],
+    tag_dict: Dict[int, Dict[str, Any]],
+    base_color_map: Dict[int, str]
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Calculate paragraph distribution among immediate child combinations."""
+    if not child_tag_ids:
+        return [], 0
+
+    paragraph_to_children: Dict[int, Set[int]] = {}
+    for child_id in child_tag_ids:
+        for paragraph_id in _get_paragraph_ids_for_tag(child_id, database, paragraph_cache):
+            paragraph_to_children.setdefault(paragraph_id, set()).add(child_id)
+
+    combo_counts: Dict[Tuple[int, ...], int] = {}
+    for combo in paragraph_to_children.values():
+        if not combo:
+            continue
+        combo_key = tuple(sorted(combo))
+        combo_counts[combo_key] = combo_counts.get(combo_key, 0) + 1
+
+    if not combo_counts:
+        return [], 0
+
+    total_count = sum(combo_counts.values())
+    segments: List[Dict[str, Any]] = []
+    sorted_combos = sorted(
+        combo_counts.items(),
+        key=lambda item: (
+            -item[1],
+            len(item[0]),
+            tuple(tag_dict[tag_id]['name'].lower() for tag_id in item[0])
+        )
+    )
+
+    for combo_key, count in sorted_combos:
+        child_names = [tag_dict[tag_id]['name'] for tag_id in combo_key]
+        label = " + ".join(child_names)
+        segments.append({
+            'segment_label': label,
+            'paragraph_count': count,
+            'percentage': (count / total_count) * 100,
+            'color': _blend_segment_color(combo_key, base_color_map),
+            'combo_key': "|".join(str(tag_id) for tag_id in combo_key),
+            'subcategory_count': len(combo_key),
+        })
+
+    return segments, total_count
+
+
+def _create_category_composition_chart(
+    segments: List[Dict[str, Any]],
+    title: str
+) -> alt.Chart:
+    """Create a pie chart visualizing category composition segments."""
+    if not segments:
+        return alt.Chart(pd.DataFrame({'segment_label': [], 'paragraph_count': []}))
+
+    df = pd.DataFrame(segments)
+    color_domain = df['segment_label'].tolist()
+    color_range = df['color'].tolist()
+
+    base = alt.Chart(df).encode(
+        theta=alt.Theta('paragraph_count:Q', stack=True),
+        color=alt.Color(
+            'segment_label:N',
+            scale=alt.Scale(domain=color_domain, range=color_range),
+            legend=alt.Legend(title='Combination')
+        ),
+        order=alt.Order('paragraph_count:Q', sort='descending')
+    )
+
+    pie = base.mark_arc(innerRadius=40, outerRadius=140).encode(
+        tooltip=[
+            alt.Tooltip('segment_label:N', title='Combination'),
+            alt.Tooltip('paragraph_count:Q', title='Paragraphs'),
+            alt.Tooltip('percentage:Q', title='Percentage', format='.1f')
+        ]
+    )
+
+    labels = alt.Chart(df).mark_text(radius=120, fill='#333', fontWeight='bold').encode(
+        theta=alt.Theta('paragraph_count:Q', stack=True),
+        text=alt.Text('percentage:Q', format='.1f')
+    )
+
+    return (pie + labels).properties(width=360, height=360, title=title)
 
 
 def _get_total_paragraph_count(database: BaseDatabaseInterface) -> int:
