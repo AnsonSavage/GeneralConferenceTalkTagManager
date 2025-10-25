@@ -1,8 +1,12 @@
 """
 Statistics page module - Shows tag tree hierarchy with usage statistics.
 """
+import altair as alt
+import numpy as np
+import pandas as pd
 import streamlit as st
-from typing import Dict, List, Set
+from datetime import date, datetime
+from typing import Any, Dict, List, Set, Tuple
 from ..database.base_database import BaseDatabaseInterface
 
 
@@ -28,6 +32,7 @@ def render_statistics_page(database: BaseDatabaseInterface) -> None:
     # Build tag hierarchy with statistics
     tag_dict = {tag['id']: tag for tag in tag_stats}
     root_tags = [tag for tag in tag_stats if tag['parent_tag_id'] is None]
+    children_map = _build_children_map(tag_stats)
     
     # Filter statistics based on selected tags
     filtered_stats = _filter_tag_statistics(tag_stats, st.session_state.selected_tags, database)
@@ -123,9 +128,118 @@ def render_statistics_page(database: BaseDatabaseInterface) -> None:
         st.caption("Percentages are calculated based on selected tags only")
     else:
         st.markdown(f"**Total talks in database:** {total_talks_all}")
+
+    histogram_section_rendered = False
+    show_histogram = st.checkbox(
+        "Show usage histogram over time",
+        value=True,
+        key="statistics_show_histogram",
+        help="Visualize how often the selected tags appear across conferences."
+    )
+    if show_histogram:
+        histogram_section_rendered = True
+        st.markdown("### ⏱️ Usage Over Time")
+        frequency_options = [6, 12, 18, 24, 30, 36]
+        frequency_labels = {
+            6: "6 months (per conference)",
+            12: "12 months (annual)",
+            18: "18 months",
+            24: "24 months (biennial)",
+            30: "30 months",
+            36: "36 months (three years)"
+        }
+        selected_frequency = st.selectbox(
+            "Histogram frequency",
+            options=frequency_options,
+            index=0,
+            format_func=lambda months: frequency_labels.get(months, f"{months} months"),
+            help="Group usage counts into bins sized in 6-month increments."
+        )
+
+        include_descendants = st.checkbox(
+            "Include descendant tags in histogram counts",
+            value=st.session_state.get("statistics_include_descendants", True),
+            key="statistics_include_descendants",
+            help="When enabled, each tag's histogram sums paragraphs from its subcategories."
+        )
+        include_descendants = st.session_state.statistics_include_descendants
+
+        histogram_tag_ids = (
+            _expand_tags_with_descendants(st.session_state.selected_tags, children_map)
+            if include_descendants else set(st.session_state.selected_tags)
+        )
+
+        time_series_data = database.get_tag_usage_time_series(histogram_tag_ids)
+        per_tag_time_series = database.get_tag_usage_time_series(
+            histogram_tag_ids,
+            by_tag=True
+        )
+        per_tag_series_map: Dict[int, List[Dict[str, Any]]] = {}
+        for entry in per_tag_time_series:
+            tag_id = entry.get('tag_id')
+            if tag_id is None:
+                continue
+            per_tag_series_map.setdefault(tag_id, []).append({
+                'conference_date': entry.get('conference_date'),
+                'paragraph_count': entry.get('paragraph_count', 0)
+            })
+        for series in per_tag_series_map.values():
+            series.sort(key=lambda item: item.get('conference_date') or '')
+
+        per_tag_histogram_inputs: Dict[int, List[Dict[str, Any]]] = {}
+        for tag_id in st.session_state.selected_tags:
+            relevant_ids = {tag_id}
+            if include_descendants:
+                relevant_ids.update(_get_descendant_ids(tag_id, children_map))
+            per_tag_histogram_inputs[tag_id] = _combine_time_series_for_tags(
+                per_tag_series_map,
+                relevant_ids
+            )
+
+        histogram_data = _build_usage_histogram(time_series_data, selected_frequency)
+
+        if histogram_data:
+            df, slope, intercept, r_squared = _prepare_histogram_dataframe(histogram_data)
+            if not df.empty:
+                chart = _create_usage_histogram_chart(df)
+                st.altair_chart(chart, use_container_width=True)
+                st.caption(
+                    f"Line of best fit (per {selected_frequency}-month bin): y = {slope:.2f}x + {intercept:.2f}; R² = {r_squared:.3f}"
+                )
+            else:
+                st.info("Not enough data to render the histogram.")
+        else:
+            st.info("No usage data available for the selected tags.")
+
+        if per_tag_histogram_inputs:
+            st.markdown("#### Individual Tag Trends")
+            for tag_id in sorted(
+                st.session_state.selected_tags,
+                key=lambda tid: tag_dict.get(tid, {}).get('name', '')
+            ):
+                tag = tag_dict.get(tag_id)
+                series = per_tag_histogram_inputs.get(tag_id, [])
+                if not tag or not series:
+                    continue
+
+                tag_histogram_data = _build_usage_histogram(series, selected_frequency)
+                if not tag_histogram_data:
+                    continue
+
+                tag_df, tag_slope, tag_intercept, tag_r_squared = _prepare_histogram_dataframe(tag_histogram_data)
+                if tag_df.empty:
+                    continue
+
+                st.markdown(f"**{tag['name']}**")
+                tag_chart = _create_usage_histogram_chart(tag_df)
+                st.altair_chart(tag_chart, use_container_width=True)
+                st.caption(
+                    f"Trend: y = {tag_slope:.2f}x + {tag_intercept:.2f}; R² = {tag_r_squared:.3f}"
+                )
     
     if filtered_total_paragraphs > 0 or filtered_total_talks > 0:
-        st.divider()
+        if not histogram_section_rendered:
+            st.divider()
         
         # Render each root tag and its hierarchy with checkboxes
         for i, root_tag in enumerate(root_tags):
@@ -195,6 +309,61 @@ def _get_leaf_tags(tag_stats: List[Dict]) -> List[Dict]:
     """Get tags that have no children (leaf nodes)."""
     tag_ids_with_children = {tag['parent_tag_id'] for tag in tag_stats if tag['parent_tag_id'] is not None}
     return [tag for tag in tag_stats if tag['id'] not in tag_ids_with_children]
+
+
+def _build_children_map(tag_stats: List[Dict]) -> Dict[int, List[int]]:
+    """Build a mapping of parent tag IDs to their child tag IDs."""
+    children_map: Dict[int, List[int]] = {}
+    for tag in tag_stats:
+        parent_id = tag.get('parent_tag_id')
+        if parent_id is not None:
+            children_map.setdefault(parent_id, []).append(tag['id'])
+    return children_map
+
+
+def _get_descendant_ids(tag_id: int, children_map: Dict[int, List[int]]) -> Set[int]:
+    """Return all descendant tag IDs for a given tag (excluding the tag itself)."""
+    descendants: Set[int] = set()
+    stack = list(children_map.get(tag_id, []))
+    while stack:
+        current = stack.pop()
+        if current in descendants:
+            continue
+        descendants.add(current)
+        stack.extend(children_map.get(current, []))
+    return descendants
+
+
+def _expand_tags_with_descendants(selected_tag_ids: Set[int], children_map: Dict[int, List[int]]) -> Set[int]:
+    """Expand a tag selection to include all descendant tags."""
+    expanded: Set[int] = set()
+    for tag_id in selected_tag_ids:
+        expanded.add(tag_id)
+        expanded.update(_get_descendant_ids(tag_id, children_map))
+    return expanded
+
+
+def _combine_time_series_for_tags(
+    series_map: Dict[int, List[Dict[str, Any]]],
+    tag_ids: Set[int]
+) -> List[Dict[str, Any]]:
+    """Aggregate multiple tag time series into a single time series."""
+    aggregated_counts: Dict[str, int] = {}
+    for tag_id in tag_ids:
+        for entry in series_map.get(tag_id, []):
+            date_key = entry.get('conference_date')
+            if not date_key:
+                continue
+            count_value = int(entry.get('paragraph_count', 0) or 0)
+            aggregated_counts[date_key] = aggregated_counts.get(date_key, 0) + count_value
+
+    if not aggregated_counts:
+        return []
+
+    return [
+        {'conference_date': date_key, 'paragraph_count': aggregated_counts[date_key]}
+        for date_key in sorted(aggregated_counts.keys())
+    ]
 
 
 def _get_total_paragraph_count(database: BaseDatabaseInterface) -> int:
@@ -335,6 +504,129 @@ def _calculate_talk_based_counts(
         'total_talk_descendant_counts': total_talk_descendant_counts,
         'unique_talk_descendant_counts': unique_talk_descendant_counts,
     }
+
+
+def _build_usage_histogram(
+    time_series_data: List[Dict[str, Any]],
+    frequency_months: int
+) -> List[Dict[str, Any]]:
+    """Convert raw time series data into aggregated histogram bins."""
+    if not time_series_data or frequency_months <= 0:
+        return []
+
+    parsed_entries: List[Tuple[date, int]] = []
+    for entry in time_series_data:
+        raw_date = entry.get('conference_date')
+        if not raw_date:
+            continue
+        try:
+            period_date = datetime.fromisoformat(raw_date).date()
+        except ValueError:
+            continue
+        count_value = int(entry.get('paragraph_count', 0) or 0)
+        parsed_entries.append((period_date, count_value))
+
+    if not parsed_entries:
+        return []
+
+    parsed_entries.sort(key=lambda item: item[0])
+    bin_size = max(1, frequency_months // 6)
+
+    histogram: List[Dict[str, Any]] = []
+    index = 0
+    total_entries = len(parsed_entries)
+    while index < total_entries:
+        bin_slice = parsed_entries[index:index + bin_size]
+        if not bin_slice:
+            break
+        period_start = bin_slice[0][0]
+        period_end = bin_slice[-1][0]
+        paragraph_sum = sum(value for _, value in bin_slice)
+        histogram.append({
+            'period_start': period_start,
+            'period_end': period_end,
+            'label': _format_period_label(period_start, period_end),
+            'paragraph_count': paragraph_sum
+        })
+        index += bin_size
+
+    return histogram
+
+
+def _prepare_histogram_dataframe(
+    histogram_data: List[Dict[str, Any]]
+) -> Tuple[pd.DataFrame, float, float, float]:
+    """Build a dataframe and regression metrics for the usage histogram."""
+    if not histogram_data:
+        return pd.DataFrame(), 0.0, 0.0, 0.0
+
+    df = pd.DataFrame(histogram_data)
+    df['period_start'] = pd.to_datetime(df['period_start'])
+    df['period_end'] = pd.to_datetime(df['period_end'])
+    df['index'] = np.arange(len(df), dtype=float)
+
+    y_values = df['paragraph_count'].astype(float).to_numpy()
+    x_values = df['index'].to_numpy()
+
+    if len(df) >= 2:
+        slope, intercept = np.polyfit(x_values, y_values, 1)
+        trend = slope * x_values + intercept
+    elif len(df) == 1:
+        slope = 0.0
+        intercept = float(y_values[0])
+        trend = np.full_like(x_values, intercept)
+    else:
+        return pd.DataFrame(), 0.0, 0.0, 0.0
+
+    if len(y_values) > 0:
+        ss_res = np.sum((y_values - trend) ** 2)
+        ss_tot = np.sum((y_values - np.mean(y_values)) ** 2)
+        r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 1.0
+    else:
+        r_squared = 0.0
+
+    df['trend'] = trend
+    return df, float(slope), float(intercept), float(r_squared)
+
+
+def _create_usage_histogram_chart(df: pd.DataFrame) -> alt.Chart:
+    """Create an Altair chart combining histogram bars with a trend line."""
+    base = alt.Chart(df).encode(
+        x=alt.X(
+            'period_start:T',
+            title='Conference period',
+            axis=alt.Axis(format='%Y', labelAngle=0)
+        )
+    )
+
+    bars = base.mark_bar(color='#4E79A7').encode(
+        y=alt.Y('paragraph_count:Q', title='Paragraph count'),
+        tooltip=[
+            alt.Tooltip('label:N', title='Period'),
+            alt.Tooltip('paragraph_count:Q', title='Paragraph count')
+        ]
+    )
+
+    trend_line = base.mark_line(color='#F28E2B', strokeWidth=2).encode(
+        y=alt.Y('trend:Q', title='Trend estimate')
+    )
+
+    trend_points = base.mark_point(color='#F28E2B', filled=True).encode(
+        y='trend:Q',
+        tooltip=[
+            alt.Tooltip('label:N', title='Period'),
+            alt.Tooltip('trend:Q', title='Trend estimate', format='.2f')
+        ]
+    )
+
+    return (bars + trend_line + trend_points).properties(height=360)
+
+
+def _format_period_label(start: date, end: date) -> str:
+    """Format a readable label for a histogram period."""
+    if start == end:
+        return start.strftime('%b %Y')
+    return f"{start.strftime('%b %Y')} - {end.strftime('%b %Y')}"
 
 
 def _render_tag_with_statistics_and_checkbox(

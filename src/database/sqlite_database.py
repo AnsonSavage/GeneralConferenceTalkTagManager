@@ -4,7 +4,7 @@ SQLite implementation of the conference talks database.
 import sqlite3
 import json
 from datetime import datetime, date
-from typing import List, Dict, Any, override
+from typing import List, Dict, Any, Set, override
 
 from .base_database import BaseDatabaseInterface
 
@@ -30,12 +30,34 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         
         # Handle existing format like "April 2023" or "October 2023"
         if isinstance(date_string, str):
-            parts = date_string.strip().split()
+            stripped = date_string.strip()
+
+            # Handle ISO-like formats such as "2024-04" or "2024-04-01"
+            try:
+                if len(stripped) == 7 and stripped[4] == '-':
+                    parsed_iso = datetime.fromisoformat(f"{stripped}-01")
+                    return parsed_iso.date().replace(day=1)
+                if len(stripped) >= 10 and stripped[4] == '-' and stripped[7] == '-':
+                    parsed_iso = datetime.fromisoformat(stripped)
+                    return parsed_iso.date().replace(day=1)
+            except ValueError:
+                pass
+
+            for fmt in ("%B %Y", "%b %Y"):
+                try:
+                    parsed = datetime.strptime(stripped, fmt)
+                    return parsed.date().replace(day=1)
+                except ValueError:
+                    continue
+
+            parts = stripped.split()
             if len(parts) == 2:
-                month_str, year_str = parts
-                year = int(year_str)
-                month = 4 if month_str.lower() == 'april' else 10
-                return date(year, month, 1)
+                try:
+                    year = int(parts[1])
+                    month = 4 if parts[0].lower().startswith('apr') else 10
+                    return date(year, month, 1)
+                except ValueError:
+                    pass
         
         # Fallback for any other format
         return date.today()
@@ -128,9 +150,15 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         conn.close()
     
     @override
-    def add_talk(self, title: str, speaker: str, conference_date: str, 
-                 hyperlink: str) -> int:
-        """Add a new talk and return its ID"""
+    def add_talk(
+        self,
+        title: str,
+        speaker: str,
+        conference_date: str,
+        hyperlink: str,
+        session: str | None = None
+    ) -> int:
+        """Add a new talk and return its ID."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -979,6 +1007,99 @@ class SQLiteConferenceTalksDB(BaseDatabaseInterface):
         
         conn.close()
         return stats
+
+    @override
+    def get_tag_usage_time_series(
+        self,
+        tag_ids: Set[int],
+        by_tag: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Get chronological paragraph usage counts per conference for the given tags."""
+        if not tag_ids:
+            return []
+
+        tag_id_list = sorted(tag_ids)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        placeholders = ','.join(['?'] * len(tag_id_list))
+
+        if by_tag:
+            tag_union = ' UNION ALL '.join(['SELECT ? AS tag_id'] * len(tag_id_list))
+            query = f"""
+                WITH conference_dates AS (
+                    SELECT DISTINCT conference_date FROM talks WHERE conference_date IS NOT NULL
+                ),
+                selected_tags AS (
+                    {tag_union}
+                ),
+                tag_usage AS (
+                    SELECT 
+                        t.conference_date,
+                        pt.tag_id,
+                        COUNT(DISTINCT p.id) AS paragraph_count
+                    FROM paragraphs p
+                    JOIN paragraph_tags pt ON p.id = pt.paragraph_id
+                    JOIN talks t ON p.talk_id = t.id
+                    WHERE pt.tag_id IN ({placeholders})
+                    GROUP BY t.conference_date, pt.tag_id
+                )
+                SELECT 
+                    cd.conference_date,
+                    st.tag_id,
+                    COALESCE(u.paragraph_count, 0) AS paragraph_count
+                FROM conference_dates cd
+                CROSS JOIN selected_tags st
+                LEFT JOIN tag_usage u ON u.conference_date = cd.conference_date AND u.tag_id = st.tag_id
+                ORDER BY st.tag_id, cd.conference_date
+            """
+            params = tag_id_list + tag_id_list
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            results: List[Dict[str, Any]] = []
+            for row in rows:
+                conference_date = row[0]
+                tag_id = row[1]
+                paragraph_count = row[2] or 0
+                if conference_date is not None:
+                    results.append({
+                        'conference_date': conference_date,
+                        'tag_id': tag_id,
+                        'paragraph_count': paragraph_count
+                    })
+        else:
+            query = f"""
+                WITH tag_usage AS (
+                    SELECT 
+                        t.conference_date AS conference_date,
+                        COUNT(DISTINCT p.id) AS paragraph_count
+                    FROM paragraphs p
+                    JOIN paragraph_tags pt ON p.id = pt.paragraph_id
+                    JOIN talks t ON p.talk_id = t.id
+                    WHERE pt.tag_id IN ({placeholders})
+                    GROUP BY t.conference_date
+                )
+                SELECT 
+                    d.conference_date,
+                    COALESCE(u.paragraph_count, 0) AS paragraph_count
+                FROM (SELECT DISTINCT conference_date FROM talks WHERE conference_date IS NOT NULL) d
+                LEFT JOIN tag_usage u ON d.conference_date = u.conference_date
+                ORDER BY d.conference_date
+            """
+            cursor.execute(query, tag_id_list)
+            rows = cursor.fetchall()
+            results = []
+            for row in rows:
+                conference_date = row[0]
+                paragraph_count = row[1] or 0
+                if conference_date is not None:
+                    results.append({
+                        'conference_date': conference_date,
+                        'paragraph_count': paragraph_count
+                    })
+
+        conn.close()
+        return results
     
     @override
     def add_keywords(self, keywords: List[str]) -> None:

@@ -3,7 +3,7 @@ Abstract base class for database operations.
 This defines the interface that all database implementations must follow.
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 
 
 class BaseDatabaseInterface(ABC):
@@ -25,8 +25,14 @@ class BaseDatabaseInterface(ABC):
     
     # Talk operations
     @abstractmethod
-    def add_talk(self, title: str, speaker: str, conference_date: str, 
-                 hyperlink: str) -> int:
+    def add_talk(
+        self,
+        title: str,
+        speaker: str,
+        conference_date: str,
+        hyperlink: str,
+        session: Optional[str] = None
+    ) -> int:
         """Add a new talk and return its ID."""
         pass
     
@@ -211,4 +217,18 @@ class BaseDatabaseInterface(ABC):
     @abstractmethod
     def get_database_info(self) -> Dict[str, Any]:
         """Get database metadata and table information."""
+        pass
+
+    @abstractmethod
+    def get_tag_usage_time_series(
+        self,
+        tag_ids: Set[int],
+        by_tag: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Get chronological paragraph usage counts per conference for the given tags.
+
+        Args:
+            tag_ids: Set of tag identifiers to include in the aggregation.
+            by_tag: When True, return counts broken down by tag (with a `tag_id` key).
+        """
         pass
